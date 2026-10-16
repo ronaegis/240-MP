@@ -2,14 +2,15 @@
 # Build the ReplayOS core and a self-contained 240-MP bundle for it.
 #
 # Runs in Docker (Debian trixie arm64, packaging/replayos/Dockerfile) and
-# produces, in build-replayos/:
-#   240mp_libretro.so         the core, for /opt/replay/cores
-#   240mp-replayos.tar.gz     240-MP for /opt/240mp: bin/ (240mp, the mpv
-#                             stand-in, the launcher, yt-dlp and deno for the
-#                             YouTube module), lib/ (everything
+# produces build-replayos/240mp-replayos.tar.gz, 240-MP for /opt/240mp:
+#   core/240mp_libretro.so    the core, which the installer copies to /opt/replay/cores
+#   bin/                      240mp, the mpv stand-in, the launcher, yt-dlp and
+#                             deno for the YouTube module, the test child
+#   lib/                      (everything
 #                             ReplayOS lacks, per packaging/replayos/system-libs.txt),
 #                             plugins/, qml/, share/240mp/
-# Install with scripts/deploy-replayos.sh.
+# Install with scripts/deploy-replayos.sh (from this machine) or
+# scripts/install-replayos.sh (on the Pi, from a release).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE=mp240-replayos-build
@@ -44,7 +45,9 @@ cmake -B $B -G Ninja -DCMAKE_BUILD_TYPE=Release -DMP240_LIBRETRO_BRIDGE=ON -DAPP
 cmake --build $B
 rm -rf $B/stage && DESTDIR=$PWD/$B/stage cmake --install $B >/dev/null
 OUT=$B/stage/opt/240mp
-install -m 755 packaging/replayos/240mp-bridge $OUT/bin/
+install -m 755 packaging/replayos/240mp-bridge $B/240mp_test_child $OUT/bin/
+install -D -m 755 $B/240mp_libretro.so $OUT/core/240mp_libretro.so
+echo "$VERSION" > $OUT/VERSION
 install -m 755 $B/downloads/yt-dlp $OUT/bin/yt-dlp
 install -m 755 $B/downloads/deno/deno $OUT/bin/deno
 
@@ -84,4 +87,4 @@ patchelf --force-rpath --set-rpath "\$ORIGIN/../lib" $OUT/bin/240mp $OUT/bin/mpv
 tar -C $B/stage/opt -czf $B/240mp-replayos.tar.gz 240mp
 echo "bundle: $(du -sh $OUT | cut -f1), $(ls $OUT/lib | wc -l) libraries"
 '
-ls -l "$ROOT/build-replayos/240mp_libretro.so" "$ROOT/build-replayos/240mp-replayos.tar.gz"
+ls -l "$ROOT/build-replayos/240mp-replayos.tar.gz"

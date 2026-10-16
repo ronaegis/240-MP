@@ -276,11 +276,14 @@ scripts/build-replayos.sh
 
 This builds with `-DMP240_LIBRETRO_BRIDGE=ON` and produces, in `build-replayos/`:
 
-| File | What |
+| In `240mp-replayos.tar.gz` (→ `/opt/240mp`) | What |
 |---|---|
-| `240mp_libretro.so` | the core, for `/opt/replay/cores` |
-| `240mp-replayos.tar.gz` | `/opt/240mp`: `bin/240mp`, `bin/mpv` (the mpv stand-in, `libretro/mpv_bridge.c`), `bin/240mp-bridge` (launcher), `bin/yt-dlp` + `bin/deno` (YouTube module), `lib/`, `plugins/`, `qml/`, `share/240mp/` |
-| `240mp_test_child` | stand-in for 240-MP that shows a test pattern, plays a tone and logs input, for checking the core alone |
+| `core/240mp_libretro.so` | the core, which the installer copies to `/opt/replay/cores` |
+| `bin/240mp`, `bin/240mp-bridge` | 240-MP and the launcher the core starts |
+| `bin/mpv` | the mpv stand-in (`libretro/mpv_bridge.c`) |
+| `bin/yt-dlp`, `bin/deno` | for the YouTube module |
+| `bin/240mp_test_child` | stand-in for 240-MP that shows a test pattern, plays a tone and logs input, for checking the core alone |
+| `lib/`, `plugins/`, `qml/`, `share/240mp/`, `VERSION` | everything else 240-MP needs |
 
 `lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Unlike the AppImage, the bundle **does** carry yt-dlp and Deno (the JavaScript runtime current yt-dlp needs for YouTube), because ReplayOS has no way to install them. The build downloads both from their latest GitHub releases and checks their published SHA-256 sums; they are cached in `build-replayos/downloads/`. yt-dlp is the standalone build, so it doesn't depend on ReplayOS's Python. To update it between deploys, run `ssh root@replay /opt/240mp/bin/yt-dlp -U`. A copy at `/media/sd/240mp/bin/yt-dlp` takes precedence, as on other platforms. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
 
@@ -290,15 +293,24 @@ This builds with `-DMP240_LIBRETRO_BRIDGE=ON` and produces, in `build-replayos/`
 scripts/deploy-replayos.sh            # default root@replay, or pass user@host
 ```
 
-The script:
+It copies the bundle over and runs the same installer releases use, `scripts/install-replayos.sh --local <bundle>`, on the Pi. The installer:
+- Runs `ldd` on every bundled binary and plugin **without** `LD_LIBRARY_PATH`, and refuses to install if anything is `not found`.
 - Swaps `/opt/240mp` and `/opt/replay/cores/240mp_libretro.so` in atomically, so a running session keeps its files.
-- Runs `ldd` on every bundled binary and plugin **without** `LD_LIBRARY_PATH`, and fails if anything is `not found`.
-- Adds a `[240mp]` section to `/opt/replay/cores/cores.cfg`, keeping the original as `cores.cfg.orig`.
+- Adds a `[240mp]` section to `/opt/replay/cores/cores.cfg`; `--uninstall` removes that section only.
 - Creates an empty `/media/sd/roms/240mp/240-MP.lr` and a favorite for it.
 
 ReplayOS picks a core by matching `<section>/` against the content path, and an empty content file starts the core without content. The core then runs `/opt/240mp/bin/240mp-bridge`. A `.lr` file whose first line is a program path runs that program instead, for example `/opt/240mp/bin/240mp_test_child`.
 
 ReplayOS updates may replace `/opt/replay` (and with it `cores.cfg`). Re-run the deploy script afterwards.
+
+### Releases
+
+`.github/workflows/replayos.yml` runs on every `v*.*.*` tag, or by hand with a tag name (`gh workflow run ReplayOS -f tag=v…`), on GitHub's arm64 runners. It runs `scripts/build-replayos.sh` and attaches three files to that tag's release:
+- `240-MP-<tag>-replayos-arm64.tar.gz`
+- `install-replayos.sh`, with the publishing repository filled in
+- `SHA256SUMS-replayos`
+
+It is separate from `release.yml`, so it also works on a fork without the macOS signing secrets. When both run for the same tag, it adds its files and a line of install instructions to the same release. End users then install with the one command in [INSTALL.md](INSTALL.md#on-replayos-raspberry-pi-5).
 
 ### Run
 

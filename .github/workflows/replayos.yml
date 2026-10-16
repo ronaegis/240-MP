@@ -1,0 +1,62 @@
+name: ReplayOS
+
+# Builds 240-MP for ReplayOS (Raspberry Pi 5) and attaches it to the release
+# of the tag: the bundle (with the core inside), the installer that runs on
+# the Pi, and their checksums. Separate from release.yml so it runs where
+# the other platforms can't (no macOS signing secrets on a fork). When both
+# run for one tag, this adds its files to the same release.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build at and publish to (created if missing)'
+        required: true
+
+jobs:
+  build-replayos:
+    name: ReplayOS (Raspberry Pi 5)
+    # Native arm64: the build runs in a Debian trixie arm64 container
+    # (packaging/replayos/Dockerfile), the release ReplayOS is built on.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Build
+        env:
+          APP_VERSION: ${{ env.TAG }}
+        run: scripts/build-replayos.sh
+
+      - name: Package
+        run: |
+          mkdir dist
+          cp build-replayos/240mp-replayos.tar.gz "dist/240-MP-${TAG}-replayos-arm64.tar.gz"
+          # The installer downloads from the repository that published it.
+          sed "s|@REPO@|${GITHUB_REPOSITORY}|g" scripts/install-replayos.sh > dist/install-replayos.sh
+          (cd dist && sha256sum "240-MP-${TAG}-replayos-arm64.tar.gz" install-replayos.sh > SHA256SUMS-replayos)
+          cat dist/SHA256SUMS-replayos
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: "240-MP ${{ env.TAG }}"
+          prerelease: ${{ contains(env.TAG, '-rc') || contains(env.TAG, '-beta') || contains(env.TAG, '-alpha') }}
+          append_body: true
+          body: |
+            ReplayOS (Raspberry Pi 5): on the Pi, as root, run
+            `curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install-replayos.sh | bash`
+            then open Favorites → 240-MP. See [these instructions](INSTALL.md#on-replayos-raspberry-pi-5).
+          files: |
+            dist/240-MP-*-replayos-arm64.tar.gz
+            dist/install-replayos.sh
+            dist/SHA256SUMS-replayos

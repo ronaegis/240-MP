@@ -146,12 +146,12 @@ void UpdateManager::evaluateApplyCapability() {
     const bool standardInstall =
         QCoreApplication::applicationDirPath() == QStringLiteral("/opt/240mp/bin");
     if (DisplayHandoff::isLibretroBridge()) {
-        // ReplayOS uses the same /opt/240mp path, but its bundle is installed
-        // from a computer (scripts/deploy-replayos.sh); install.sh is for
-        // Raspberry Pi OS and must not be suggested here.
+        // ReplayOS uses the same /opt/240mp path, but has its own installer
+        // (scripts/install-replayos.sh); install.sh is for Raspberry Pi OS and
+        // must not be suggested here.
         m_canApply = false;
-        m_applyHint = QStringLiteral("On ReplayOS, update by running "
-                                     "scripts/deploy-replayos.sh again.");
+        m_applyHint = QStringLiteral("On ReplayOS, update by running the ReplayOS "
+                                     "install command again (see INSTALL.md).");
     } else if (!standardInstall) {
         m_canApply = false;
         m_applyHint = QStringLiteral("Not a standard install — update manually.");

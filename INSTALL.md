@@ -330,17 +330,17 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
 
 ### Requirements
 
-- A Raspberry Pi 5 running ReplayOS, reachable over SSH as root
-- A computer with Docker to build the bundle; there is no release download for ReplayOS yet
+- A Raspberry Pi 5 running ReplayOS, with network access
+- A way to run a command on it as root: SSH (`ssh root@replay`) or a keyboard on its console
 
 ### Steps
 
-1. Build and install from a checkout of this repository (details in [BUILDING.md](BUILDING.md#replayos-raspberry-pi-5)):
+1. On the Pi, as root, run:
    ```bash
-   scripts/build-replayos.sh
-   scripts/deploy-replayos.sh root@replay
+   curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash
    ```
-2. On the Pi, open **Favorites → 240-MP**.
+   This downloads the latest release (about 135 MB), checks it against its published checksum, installs it to `/opt/240mp`, and adds 240-MP to ReplayOS's core list. To install a specific release, put `-s -- --version v2026.10.15-replayos.1` after `bash`.
+2. Open **Favorites → 240-MP**.
 
 ### Post Install
 
@@ -351,15 +351,15 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
 
 ### Update
 
-Build and run `scripts/deploy-replayos.sh` again. The in-app updater does not apply on ReplayOS. Also re-run the deploy script after a ReplayOS update, which may reset ReplayOS's core list.
+Run the install command again. A running session isn't disturbed; the new version starts next time you open 240-MP. Also re-run it after a ReplayOS update, which may replace ReplayOS's core list. The in-app updater does not apply on ReplayOS.
 
 ### Uninstall
 
 ```bash
-ssh root@replay 'rm -rf /opt/240mp /opt/replay/cores/240mp_libretro.so /media/sd/roms/240mp "/media/sd/roms/_favorites/240mp@240-MP.lr.fav" && cp /opt/replay/cores/cores.cfg.orig /opt/replay/cores/cores.cfg'
+curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash -s -- --uninstall
 ```
 
-This also removes any other core you added to `cores.cfg` after 240-MP. To keep your settings, leave `/media/sd/240mp/` in place.
+This removes 240-MP, its core and its entry in ReplayOS's core list, leaving other cores alone. Add `--keep-settings` to keep `/media/sd/240mp/`.
 
 ## On SteamOS / Linux x86_64
 
