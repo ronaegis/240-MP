@@ -17,7 +17,9 @@
  *    the stream has room is what paces playback to the CRT clock.
  *
  * Command line: what mpv accepts, in the forms 240-MP uses: files and URLs,
- * "--", --name=value, --name, --no-name. Options that choose or place a window
+ * "--", --name=value, --name, --no-name, and the list shorthands only the mpv
+ * program understands (--script, --sub-file, --<list>-append), which are
+ * collected and set as whole lists before mpv starts. Options that choose or place a window
  * (--vo, --fullscreen, --fs-screen, ...) are ignored: output always goes to
  * the bridge. Exit codes follow mpv: 0 played, 2 nothing could be played,
  * 3 some files failed, 4 quit by a signal, 1 bad options or setup failure.
@@ -87,6 +89,121 @@ static bool ignored(const char *name)
    return false;
 }
 
+/* List options given piecewise on the command line. libmpv's
+ * mpv_set_option_string() knows neither the mpv program's shorthands nor
+ * "-append", and its string form of path lists splits on ':', which would cut
+ * URLs apart, so each list is collected here and set as one node. */
+#define MAX_LISTS       8
+#define MAX_LIST_ITEMS 64
+
+typedef struct {
+   char name[64];
+   bool is_map;             /* key-value list (script-opts) */
+   int count;
+   char *keys[MAX_LIST_ITEMS];
+   char *values[MAX_LIST_ITEMS];
+} list_option;
+
+static list_option lists[MAX_LISTS];
+static int list_count;
+
+static const struct { const char *alias, *list; } list_aliases[] = {
+   { "script", "scripts" },
+   { "sub-file", "sub-files" },
+   { "audio-file", "audio-files" },
+   { "external-file", "external-files" },
+   { NULL, NULL },
+};
+
+static list_option *list_named(const char *name, bool is_map)
+{
+   int i;
+   for (i = 0; i < list_count; i++)
+      if (!strcmp(lists[i].name, name))
+         return &lists[i];
+   if (list_count == MAX_LISTS)
+      return NULL;
+   snprintf(lists[list_count].name, sizeof lists[list_count].name, "%s", name);
+   lists[list_count].is_map = is_map;
+   return &lists[list_count++];
+}
+
+static bool list_add(list_option *l, const char *key, size_t key_len, const char *value)
+{
+   if (!l || l->count == MAX_LIST_ITEMS)
+      return false;
+   l->keys[l->count] = key ? strndup(key, key_len) : NULL;
+   l->values[l->count] = strdup(value);
+   l->count++;
+   return true;
+}
+
+/* "k=v,k=v" into a key-value list (later keys win, as in mpv). */
+static bool map_add_pairs(list_option *l, const char *pairs)
+{
+   const char *p = pairs;
+   while (*p) {
+      const char *end = strchr(p, ','), *eq;
+      size_t len = end ? (size_t)(end - p) : strlen(p);
+      char *item = strndup(p, len);
+      bool ok;
+      if (!(eq = strchr(item, '='))) {
+         free(item);
+         return false;
+      }
+      ok = list_add(l, item, (size_t)(eq - item), eq + 1);
+      free(item);
+      if (!ok)
+         return false;
+      p += len + (end ? 1 : 0);
+   }
+   return true;
+}
+
+/* Returns 1 if `name` was a list form and was collected, 0 if not, -1 on error. */
+static int collect_list_option(const char *name, const char *value)
+{
+   char base[64];
+   size_t n = strlen(name);
+   int i;
+
+   for (i = 0; list_aliases[i].alias; i++)
+      if (!strcmp(name, list_aliases[i].alias))
+         return list_add(list_named(list_aliases[i].list, false), NULL, 0, value) ? 1 : -1;
+   if (!strcmp(name, "script-opts")) {
+      list_option *l = list_named("script-opts", true);
+      if (!l)
+         return -1;
+      l->count = 0;  /* a plain set replaces what came before */
+      return map_add_pairs(l, value) ? 1 : -1;
+   }
+   if (n > 7 && !strcmp(name + n - 7, "-append") && n - 7 < sizeof base) {
+      snprintf(base, sizeof base, "%.*s", (int)(n - 7), name);
+      if (!strcmp(base, "script-opts"))
+         return map_add_pairs(list_named(base, true), value) ? 1 : -1;
+      return list_add(list_named(base, false), NULL, 0, value) ? 1 : -1;
+   }
+   return 0;
+}
+
+static bool set_lists(void)
+{
+   int i, j, err;
+   for (i = 0; i < list_count; i++) {
+      list_option *l = &lists[i];
+      mpv_node items[MAX_LIST_ITEMS];
+      mpv_node_list list = { l->count, items, l->is_map ? l->keys : NULL };
+      mpv_node node = { .format = l->is_map ? MPV_FORMAT_NODE_MAP : MPV_FORMAT_NODE_ARRAY, .u.list = &list };
+      for (j = 0; j < l->count; j++)
+         items[j] = (mpv_node){ .format = MPV_FORMAT_STRING, .u.string = l->values[j] };
+      if ((err = mpv_set_option(mpv, l->name, MPV_FORMAT_NODE, &node)) < 0) {
+         fprintf(stderr, "mpv_bridge: --%s: %s\n", l->name, mpv_error_string(err));
+         return false;
+      }
+   }
+   return true;
+}
+
 /* "--name=value", "--name" (yes) or "--no-name" (no). */
 static bool apply_option(const char *arg)
 {
@@ -106,6 +223,13 @@ static bool apply_option(const char *arg)
    }
    if (ignored(name))
       return true;
+   switch (collect_list_option(name, value)) {
+   case 1:
+      return true;
+   case -1:
+      fprintf(stderr, "mpv_bridge: %s: cannot add to the list\n", arg);
+      return false;
+   }
    err = mpv_set_option_string(mpv, name, value);
    if (err < 0) {
       fprintf(stderr, "mpv_bridge: %s: %s\n", arg, mpv_error_string(err));
@@ -484,6 +608,8 @@ int main(int argc, char **argv)
       fprintf(stderr, "mpv_bridge: nothing to play\n");
       return 1;
    }
+   if (!set_lists())
+      return 1;
    if (mpv_initialize(mpv) < 0) {
       fprintf(stderr, "mpv_bridge: mpv failed to start\n");
       return 1;
