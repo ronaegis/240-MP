@@ -259,6 +259,63 @@ Configuration lives at `~/.local/share/240-MP/` (same as the Pi). See [INSTALL.m
 
 `yt-dlp` is deliberately **not** bundled (it needs to be updatable independently of app releases). For the YouTube module on an immutable distro, drop a copy at `~/.local/share/240-MP/bin/yt-dlp` (`chmod +x`, update with `yt-dlp -U`); the app resolves it there first, then a `yt-dlp` sibling of the binary, then `PATH`, and hands the chosen path to mpv's ytdl hook via `--script-opts=ytdl_hook-ytdl_path=…` so both use the same copy. See [INSTALL.md](INSTALL.md#youtube-yt-dlp).
 
+## ReplayOS (Raspberry Pi 5)
+
+On [ReplayOS](https://www.replayos.com/) 240-MP runs as a **libretro core**. The frontend loads `240mp_libretro.so` like any emulator, so 240-MP gets ReplayOS's CRT modes, and the core runs 240-MP off-screen (see [ARCHITECTURE.md → ReplayOS core](ARCHITECTURE.md#replayos-core-libretro-bridge)). ReplayOS ships no Qt and no mpv, so everything 240-MP needs comes in a self-contained bundle installed to `/opt/240mp`.
+
+### Prerequisites (one-time)
+
+- Docker with arm64 support (Docker Desktop on Apple Silicon runs it natively). The build happens in a Debian trixie arm64 image, the release ReplayOS is built on, from `packaging/replayos/Dockerfile`.
+- SSH access to the ReplayOS box as root (`ssh root@replay`).
+
+### Build
+
+```bash
+scripts/build-replayos.sh
+```
+
+This builds with `-DMP240_LIBRETRO_BRIDGE=ON` and produces, in `build-replayos/`:
+
+| File | What |
+|---|---|
+| `240mp_libretro.so` | the core, for `/opt/replay/cores` |
+| `240mp-replayos.tar.gz` | `/opt/240mp`: `bin/240mp`, `bin/mpv` (the mpv stand-in, `libretro/mpv_bridge.c`), `bin/240mp-bridge` (launcher), `lib/`, `plugins/`, `qml/`, `share/240mp/` |
+| `240mp_test_child` | stand-in for 240-MP that shows a test pattern, plays a tone and logs input, for checking the core alone |
+
+`lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
+
+### Install on the Pi
+
+```bash
+scripts/deploy-replayos.sh            # default root@replay, or pass user@host
+```
+
+The script:
+- Swaps `/opt/240mp` and `/opt/replay/cores/240mp_libretro.so` in atomically, so a running session keeps its files.
+- Runs `ldd` on every bundled binary and plugin **without** `LD_LIBRARY_PATH`, and fails if anything is `not found`.
+- Adds a `[240mp]` section to `/opt/replay/cores/cores.cfg`, keeping the original as `cores.cfg.orig`.
+- Creates an empty `/media/sd/roms/240mp/240-MP.lr` and a favorite for it.
+
+ReplayOS picks a core by matching `<section>/` against the content path, and an empty content file starts the core without content. The core then runs `/opt/240mp/bin/240mp-bridge`. A `.lr` file whose first line is a program path runs that program instead, for example `/opt/240mp/bin/240mp_test_child`.
+
+ReplayOS updates may replace `/opt/replay` (and with it `cores.cfg`). Re-run the deploy script afterwards.
+
+### Run
+
+**Favorites → 240-MP**. The core option **Video mode** switches between 640x480i and 320x240p live. Leave with ReplayOS's menu combo (Select+Start); quitting 240-MP also returns to the menu.
+
+Configuration lives in `/media/sd/240mp/` on the SD card's data partition, which survives ReplayOS updates and can be edited from a computer.
+
+### Logs
+
+| File (on the Pi) | What |
+|---|---|
+| `/tmp/240mp_core.log` | the core: start, exit, kills |
+| `/tmp/240mp.log` | 240-MP's stdout/stderr, including `[bridge]` lines and the mpv stand-in's output |
+| `/tmp/240mp-mpv.log` | mpv's own `--log-file`, as on other platforms ([mpv playback logs](#mpv-playback-logs)) |
+
+ReplayOS itself keeps only warnings and errors (`/var/log/replay.log`), so the core writes its own log.
+
 ## Gamepad input (input.cfg)
 
 USB game controllers should work out of the box as SDL's built-in controller database normalizes most pads (Xbox, PlayStation, 8BitDo, NES-style clones etc...) to a standard layout. 240-MP maps that stanard layout to its navigation actions:

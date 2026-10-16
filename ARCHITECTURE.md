@@ -31,6 +31,9 @@ The guiding idea: **browse structured content, then hand off to the right tool f
       ...
     player/
       MpvController.h/.cpp          # mpv subprocess controller: QProcess launch + IPC socket
+    bridge/
+      LibretroBridge.h/.cpp         # ReplayOS bridge mode: off-screen UI, RetroPad input
+  libretro/                         # ReplayOS core (C) + mpv stand-in, see "ReplayOS core" below
   modules/                          # QML + assets per module (discovered at startup)
     plex/
       manifest.json                 # module identity and settings shape
@@ -285,6 +288,46 @@ The **scripts module** (`modules/scripts/`, `src/modules/scripts/`) is the secon
 - **`setsid()` in a child-process modifier**, so the child leads its own process group: `killpg` reaches everything it spawned, and an empty group is how you know the screen is free again. A launcher script that backgrounds its real work and exits immediately would otherwise have the display taken back out from under its children.
 - **Report only after the display is restored.** The caller pops its view on the "finished" signal; doing that while the framebuffer still belongs to the child draws into memory you don't own.
 - **No stop key during a takeover.** A takeover child should own input for it's whole run, and on EGLFS every keystroke is double-delivered (Qt's libinput and the child both read the same evdev devices) so any tap-to-stop key would also fire inside inside a launched takeover application (For example ESC/Back is used by RetroArch's to navigate its menus just like its used inside 240-MP so pressing that key while RA is open would SIGTERM the session mid-run). With this in mind, the runner view is set up to swallow Back events while a takeover is busy and offers no direct stop key. What covers failures instead: the started-watchdog and `FailedToStart` handling, the downgrade-to-console refusal when display state can't be saved, and `~ScriptLauncher`'s SIGTERM → SIGKILL + `releaseNow()` at app quit. Console mode and downgraded runs (where 240-MP kept the screen) still have the Back-to-stop key with `requestStop()`'s SIGTERM → SIGKILL escalation.
+
+## ReplayOS core (libretro bridge)
+
+[ReplayOS](https://www.replayos.com/) drives a CRT from a Raspberry Pi 5 and generates the exact video mode each game needs. Its frontend owns the display (DRM/KMS), the sound card and every controller, and only runs **libretro cores**. 240-MP runs there *as a core*: ReplayOS loads `240mp_libretro.so` like any emulator, and the core puts 240-MP on the CRT. Built only with `-DMP240_LIBRETRO_BRIDGE=ON` (see [BUILDING.md](BUILDING.md#replayos-raspberry-pi-5)). Every other build is unaffected.
+
+```
+ReplayOS frontend ──dlopen──► 240mp_libretro.so (libretro/core.c, C, no Qt)
+                                │  posix_spawn, own process group
+                                ▼
+                              240mp (bridge mode, src/bridge/LibretroBridge)
+                                │  QProcess, as on every other platform
+                                ▼
+                              bin/mpv = libretro/mpv_bridge.c (libmpv)
+
+ socket (SEQPACKET): core → 240mp   MODE, TICK (input, one per CRT frame), KEY, QUIT
+ shared memory:      UI layer   (240mp → core)   triple buffer, XRGB8888
+                     video layer (mpv → core)    triple buffer, shown while mpv owns it
+                     4 audio streams (240mp's children → core, mixed by the core)
+```
+
+The protocol and memory layout live in one header, `libretro/bridge_proto.h`, which the C and C++ sides share.
+
+- **Why a separate process.** ReplayOS `dlclose()`s a core on every exit and loads it again next time, which Qt does not survive. A crash in 240-MP must also not take the frontend down. So the core is a small C program that starts 240-MP and exchanges frames, audio and input with it.
+- **The core is the clock.** Each `retro_run` sends a TICK with the RetroPad state and shows the newest finished frame (the frontend dupes when nothing changed). It also plays exactly one frame's worth of audio, padded with silence. Consuming at that constant rate is what paces mpv to the CRT, with no resampling.
+- **UI rendering.** `Main.qml` loads as usual with initial properties `visible: false` / `visibility: Hidden`, so its Window is never shown and eglfs never touches the display. Its top-level items are reparented into a `QQuickRenderControl` window, which renders on the GPU into an FBO. The result is read back as BGRA, top row first, into the UI layer. The `root` id, `root.sw`/`root.sh` and every view work unchanged. A frame is rendered only when the scene changed. QML animations are advanced by a tick-driven `QAnimationDriver`, exactly one CRT frame per TICK. It is installed before any QQuickWindow exists; the hidden root Window's render loop then logs a harmless "animation driver already installed".
+- **Input.** In bridge mode `InputManager` opens neither SDL2 nor evdev, since the frontend reads them and reading them again would double every press. RetroPad bits are translated to SDL GameController ids **by position** (RetroPad B = south = SDL A) and go through `injectControllerButton`/`injectControllerAxis`, so the mapping, `input.cfg`, auto-repeat and hint labels all apply. The off-screen window never has OS focus, so it is registered with `setTargetWindow(window, /*alwaysActive=*/true)`.
+- **Playback.** mpv cannot reach the display or the sound card, so the bundle installs a stand-in **as `bin/mpv`**, which `mpvbin::locate()` already prefers. MpvController, ambient mode and weather music launch it with their usual command lines and IPC sockets. It runs libmpv:
+  - **Video** goes through the OpenGL render API on a surfaceless EGL context on the GPU render node, using hardware decoding (`drm_prime` for HEVC on the Pi 5), at the CRT mode's size, into the video layer.
+  - **Audio** goes `ao=pcm` → a FIFO with a one-page pipe buffer → an audio stream.
+
+  `DisplayHandoff::isLibretroBridge()` turns the VT/DRM hand-off off: the frontend keeps the display, and the core switches layers.
+
+Invariants that each cost a hang to find. Keep them:
+
+- **The audio consumer must never call mpv.** While `ao_pcm` is blocked writing a full pipe it holds the audio lock, so core calls block. Here the consumer is the core, in another process.
+- **Drain the FIFO until mpv is destroyed.** If you stop reading first, mpv blocks in the write and can never quit. On a signal, `quit` goes out with `mpv_command_async` and is backed by a 3 s `_exit` watchdog. If the core stops draining (unloaded or paused) for 500 ms, audio is dropped rather than held back.
+- **`MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME = 0`.** Otherwise every render waits about 30 ms for the frame's display time; the core decides when frames are shown. Don't enable `ADVANCED_CONTROL` while calling `mpv_get_property` on the render thread, which deadlocks.
+- **Load files only after the render context exists**, or mpv disables video ("No render context set").
+- **Nothing outlives a session.** The helper has `PR_SET_PDEATHSIG`. 240-MP marks the socket close-on-exec, so a lingering child can't hide 240-MP's exit from the core. The core kills 240-MP's process group after reaping it. The shared-memory descriptor stays inheritable on purpose, because the helpers need it.
+- **Two producers never share a buffer.** Each layer has a single producer at a time. A new mpv derives the free video buffer from the core's published `video_front` and `middle` (`mp240_video_back()`), never from what a previous, possibly crashed, mpv left behind.
 
 ## Card Hand-off (NFC → a module)
 

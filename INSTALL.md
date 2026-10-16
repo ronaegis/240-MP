@@ -324,6 +324,42 @@ Or manually:
 - Remove it just like you would any application on macOS
 - Remove the configuration files in `~/Library/Application Support/240-MP/`
 
+## On ReplayOS (Raspberry Pi 5)
+
+On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you start it from ReplayOS like a game, and it uses ReplayOS's CRT video modes.
+
+### Requirements
+
+- A Raspberry Pi 5 running ReplayOS, reachable over SSH as root
+- A computer with Docker to build the bundle; there is no release download for ReplayOS yet
+
+### Steps
+
+1. Build and install from a checkout of this repository (details in [BUILDING.md](BUILDING.md#replayos-raspberry-pi-5)):
+   ```bash
+   scripts/build-replayos.sh
+   scripts/deploy-replayos.sh root@replay
+   ```
+2. On the Pi, open **Favorites → 240-MP**.
+
+### Post Install
+
+- **Video mode:** in ReplayOS's core options for 240-MP, choose 640x480i (sharper text) or 320x240p.
+- **Controls:** your controllers work as they do in ReplayOS. ReplayOS's menu combo (Select+Start) leaves 240-MP.
+- **Settings** are stored in `/media/sd/240mp/` on the SD card, so they survive ReplayOS updates.
+
+### Update
+
+Build and run `scripts/deploy-replayos.sh` again. The in-app updater does not apply on ReplayOS. Also re-run the deploy script after a ReplayOS update, which may reset ReplayOS's core list.
+
+### Uninstall
+
+```bash
+ssh root@replay 'rm -rf /opt/240mp /opt/replay/cores/240mp_libretro.so /media/sd/roms/240mp "/media/sd/roms/_favorites/240mp@240-MP.lr.fav" && cp /opt/replay/cores/cores.cfg.orig /opt/replay/cores/cores.cfg'
+```
+
+This also removes any other core you added to `cores.cfg` after 240-MP. To keep your settings, leave `/media/sd/240mp/` in place.
+
 ## On SteamOS / Linux x86_64
 
 For **SteamOS** and other x86_64 Linux distros, 240-MP ships as an **AppImage**. mpv is bundled, so there is nothing else to install; it runs on stock SteamOS without any additional package installs.

@@ -1,4 +1,5 @@
 #include "UpdateManager.h"
+#include "../util/DisplayHandoff.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -144,7 +145,14 @@ void UpdateManager::evaluateApplyCapability() {
     // once; non-standard installs (dev builds, custom prefixes) are not managed.
     const bool standardInstall =
         QCoreApplication::applicationDirPath() == QStringLiteral("/opt/240mp/bin");
-    if (!standardInstall) {
+    if (DisplayHandoff::isLibretroBridge()) {
+        // ReplayOS uses the same /opt/240mp path, but its bundle is installed
+        // from a computer (scripts/deploy-replayos.sh); install.sh is for
+        // Raspberry Pi OS and must not be suggested here.
+        m_canApply = false;
+        m_applyHint = QStringLiteral("On ReplayOS, update by running "
+                                     "scripts/deploy-replayos.sh again.");
+    } else if (!standardInstall) {
         m_canApply = false;
         m_applyHint = QStringLiteral("Not a standard install — update manually.");
     } else if (!qEnvironmentVariableIsSet("MP240_LAUNCHER_API")) {
