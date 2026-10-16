@@ -34,10 +34,23 @@ class InputManager : public QObject {
     Q_PROPERTY(QVariantMap hints READ hints NOTIFY hintsChanged)
 
 public:
-    explicit InputManager(const QString &dataRoot, AppCore *appCore, QObject *parent = nullptr);
+    // readDevices=false leaves the gamepads and the Consumer Control device to
+    // someone else: under ReplayOS the frontend owns them and forwards input
+    // through injectControllerButton/Axis (src/bridge/).
+    explicit InputManager(const QString &dataRoot, AppCore *appCore, bool readDevices = true,
+                          QObject *parent = nullptr);
     ~InputManager() override;
 
-    void setTargetWindow(QQuickWindow *window);
+    // alwaysActive: the window never gets OS focus but is the whole UI (the
+    // ReplayOS bridge renders it off-screen), so actions always go to QML.
+    void setTargetWindow(QQuickWindow *window, bool alwaysActive = false);
+
+    // Controller input from outside SDL, as SDL_GameControllerButton /
+    // SDL_GameControllerAxis ids, so the active mapping, input.cfg overrides,
+    // auto-repeat and hint labels all apply. `device` must not collide with an
+    // SDL instance id (use negative ids below -1).
+    void injectControllerButton(int device, int sdlButton, bool pressed);
+    void injectControllerAxis(int device, int sdlAxis, int value);
 
     bool gamepadConnected() const { return !m_controllers.isEmpty(); }
     QString lastInputDevice() const { return m_lastInputDevice; }
@@ -126,6 +139,7 @@ private:
     static bool isDirectional(Action a);
 
     QQuickWindow *m_window = nullptr;
+    bool m_windowAlwaysActive = false;
     AppCore *m_appCore = nullptr;
     QString m_dataRoot;
     bool m_sdlReady = false;

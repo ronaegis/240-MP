@@ -74,7 +74,8 @@ bool textInputHasFocus() {
 }
 }
 
-InputManager::InputManager(const QString &dataRoot, AppCore *appCore, QObject *parent)
+InputManager::InputManager(const QString &dataRoot, AppCore *appCore, bool readDevices,
+                           QObject *parent)
     : QObject(parent)
     , m_appCore(appCore)
     , m_dataRoot(dataRoot)
@@ -87,14 +88,16 @@ InputManager::InputManager(const QString &dataRoot, AppCore *appCore, QObject *p
     connect(&m_repeatTimer,      &QTimer::timeout, this, &InputManager::onRepeatTick);
 
     rebuildMapping();
-    initSdl();
+    if (readDevices)
+        initSdl();
 
     loadKeyRemap();
     if (m_appCore)
         connect(m_appCore, &AppCore::appSettingChanged, this, &InputManager::onAppSettingChanged);
 
 #ifdef Q_OS_LINUX
-    openConsumerControlDevice();
+    if (readDevices)
+        openConsumerControlDevice();
 #endif
 
     // Watch the data dir (not the file) so input.cfg can appear later and so
@@ -121,8 +124,17 @@ InputManager::~InputManager() {
 #endif
 }
 
-void InputManager::setTargetWindow(QQuickWindow *window) {
+void InputManager::setTargetWindow(QQuickWindow *window, bool alwaysActive) {
     m_window = window;
+    m_windowAlwaysActive = alwaysActive;
+}
+
+void InputManager::injectControllerButton(int device, int sdlButton, bool pressed) {
+    handleButton(device, static_cast<Uint8>(sdlButton), pressed);
+}
+
+void InputManager::injectControllerAxis(int device, int sdlAxis, int value) {
+    handleAxis(device, static_cast<Uint8>(sdlAxis), static_cast<Sint16>(qBound(-32768, value, 32767)));
 }
 
 // ── SDL lifecycle ─────────────────────────────────────────────────────────────
@@ -697,7 +709,7 @@ void InputManager::onRepeatTick() {
 }
 
 bool InputManager::windowActive() const {
-    return m_window && m_window->isActive();
+    return m_window && (m_windowAlwaysActive || m_window->isActive());
 }
 
 // Post to the root QQuickWindow, not QGuiApplication::focusWindow(): Qt Quick

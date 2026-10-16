@@ -16,3 +16,5 @@ Thumbs.db
 /.appimage-tools
 /.mpv-build
 /*.AppImage
+# ReplayOS core build outputs (scripts/build-replayos.sh)
+/build-replayos

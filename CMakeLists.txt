@@ -76,6 +76,34 @@ add_executable(240mp
 
 target_compile_definitions(240mp PRIVATE APP_VERSION="${APP_VERSION}")
 
+# ReplayOS: a libretro core (libretro/core.c) that ReplayOS loads like any
+# other core; it starts 240-MP, which then renders off-screen through
+# src/bridge/. Linux only (Debian trixie arm64, built by scripts/build-replayos.sh).
+option(MP240_LIBRETRO_BRIDGE "Build the ReplayOS core and 240-MP's bridge mode" OFF)
+if(MP240_LIBRETRO_BRIDGE)
+    if(APPLE)
+        message(FATAL_ERROR "MP240_LIBRETRO_BRIDGE is for ReplayOS (Linux) builds")
+    endif()
+    find_package(Qt6 REQUIRED COMPONENTS OpenGL)
+    target_sources(240mp PRIVATE src/bridge/LibretroBridge.cpp)
+    target_compile_definitions(240mp PRIVATE MP240_LIBRETRO_BRIDGE=1)
+    target_link_libraries(240mp PRIVATE Qt6::OpenGL)
+
+    enable_language(C)
+    add_library(240mp_libretro MODULE libretro/core.c)
+    set_target_properties(240mp_libretro PROPERTIES PREFIX "")
+    target_include_directories(240mp_libretro PRIVATE libretro libretro/include)
+    target_compile_options(240mp_libretro PRIVATE -Wall -Wextra)
+    target_link_options(240mp_libretro PRIVATE
+        -Wl,--no-undefined -Wl,--version-script=${CMAKE_SOURCE_DIR}/libretro/link.T)
+
+    # Stand-in for 240-MP that speaks the bridge protocol without Qt, for
+    # checking the core on its own (see the comment at the top of the file).
+    add_executable(240mp_test_child libretro/test_child.c)
+    target_compile_options(240mp_test_child PRIVATE -Wall -Wextra)
+    target_link_libraries(240mp_test_child PRIVATE m)
+endif()
+
 target_link_libraries(240mp PRIVATE
     Qt6::Core
     Qt6::Gui

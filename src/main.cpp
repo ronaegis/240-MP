@@ -32,6 +32,10 @@
 #ifdef Q_OS_MAC
 #include "util/MacosUtils.h"
 #endif
+#ifdef MP240_LIBRETRO_BRIDGE
+#include "bridge/LibretroBridge.h"
+#include <memory>
+#endif
 
 static QString resolveAppRoot() {
     QString envRoot = qEnvironmentVariable("APP_ROOT");
@@ -72,6 +76,16 @@ static volatile std::sig_atomic_t g_termRequested = 0;
 extern "C" void mp240HandleTerm(int) { g_termRequested = 1; }
 
 int main(int argc, char *argv[]) {
+    // Started by the ReplayOS core (libretro/core.c): the UI renders off-screen
+    // and reaches the CRT through the core. See src/bridge/LibretroBridge.h.
+#ifdef MP240_LIBRETRO_BRIDGE
+    const bool bridgeMode = LibretroBridge::requested();
+    if (bridgeMode)
+        LibretroBridge::configureGraphics();
+#else
+    const bool bridgeMode = false;
+#endif
+
     QGuiApplication app(argc, argv);
     app.setApplicationName("240-MP");
     app.setApplicationVersion(QStringLiteral(APP_VERSION));
@@ -160,7 +174,7 @@ int main(int argc, char *argv[]) {
     DisplayHandoff      displayHandoff;
     ScriptsBackend      scriptsBackend(appRoot, dataRoot, &displayHandoff);
     MpvController       mpvController(appRoot, dataRoot, &appCore, &displayHandoff);
-    InputManager        inputManager(dataRoot, &appCore);
+    InputManager        inputManager(dataRoot, &appCore, !bridgeMode);
     IdleTracker         idleTracker(60);   // disabled until Main.qml applies the saved setting
     UpdateManager       updateManager(appRoot, dataRoot);
 
@@ -206,12 +220,32 @@ int main(int argc, char *argv[]) {
 
     engine.addImportPath(appRoot + "/views");
 
+#ifdef MP240_LIBRETRO_BRIDGE
+    // Declared after the engine so it is destroyed first and can hand the
+    // QML items back to Main.qml's window.
+    std::unique_ptr<LibretroBridge> bridge;
+    if (bridgeMode) {
+        bridge = std::make_unique<LibretroBridge>(&inputManager);
+        if (!bridge->open())
+            return 1;
+        QObject::connect(bridge.get(), &LibretroBridge::quitRequested, &app, &QCoreApplication::quit);
+        // Main.qml's Window must never be shown: the frontend owns the display.
+        engine.setInitialProperties({{"visible", false}, {"visibility", QWindow::Hidden}});
+    }
+#endif
+
     engine.load(QUrl::fromLocalFile(appRoot + "/Main.qml"));
     if (engine.rootObjects().isEmpty()) {
         qCritical("[main] QML engine failed to load Main.qml");
         return 1;
     }
 
+#ifdef MP240_LIBRETRO_BRIDGE
+    if (bridge) {
+        bridge->attach(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
+        inputManager.setTargetWindow(bridge->window(), /*alwaysActive=*/true);
+    } else
+#endif
     // Gamepad key events are posted straight to the root window so they reach
     // the QML focus item even when another window (mpv) holds OS focus.
     inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));

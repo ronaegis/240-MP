@@ -1,0 +1,29 @@
+#!/bin/sh
+# Started by the ReplayOS core (/opt/replay/cores/240mp_libretro.so), which
+# passes the bridge descriptors in MP240_BRIDGE_SOCK / MP240_BRIDGE_SHM.
+# Sets up the bundled Qt and runs 240-MP in bridge mode.
+BIN=$(dirname "$(readlink -f "$0")")
+ROOT=$(dirname "$BIN")
+
+# Qt renders off-screen on the GPU. eglfs needs the KMS device that has
+# connectors to start, but never shows a window, so it never takes the
+# display from the frontend.
+card=/dev/dri/card1
+for c in /sys/class/drm/card[0-9]*-*; do
+   [ -e "$c" ] && card=/dev/dri/$(basename "$c" | cut -d- -f1) && break
+done
+printf '{ "device": "%s", "hwcursor": false }\n' "$card" > /tmp/240mp-kms.json
+
+export QT_QPA_PLATFORM=eglfs
+export QT_QPA_EGLFS_INTEGRATION=eglfs_kms
+export QT_QPA_EGLFS_KMS_CONFIG=/tmp/240mp-kms.json
+export QT_QPA_EGLFS_HIDECURSOR=1
+export QT_PLUGIN_PATH="$ROOT/plugins"
+export QML_IMPORT_PATH="$ROOT/qml"
+export APP_ROOT="$ROOT/share/240mp"
+# On the SD card's exFAT partition: survives ReplayOS updates and can be
+# edited from a computer.
+export DATA_ROOT="${MP240_DATA_ROOT:-/media/sd/240mp}"
+export HOME="${HOME:-/root}"
+mkdir -p "$DATA_ROOT"
+exec "$BIN/240mp"
