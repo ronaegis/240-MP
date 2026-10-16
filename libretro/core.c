@@ -8,8 +8,9 @@
  * exit, and a crash in 240-MP must not take the frontend down.
  *
  * This core is the clock master: each retro_run sends one TICK with the
- * input, shows the newest frame the child has finished and plays exactly one
- * frame's worth of audio from the ring.
+ * input, shows the newest finished frame (of the video layer while mpv plays,
+ * else of the UI layer) and plays exactly one frame's worth of audio, mixed
+ * from every producer's ring.
  *
  * The content file picks what to run: empty (the usual "240-MP.lr") starts
  * MP240_DEFAULT_CHILD; otherwise its first line is the program to start
@@ -56,8 +57,9 @@ static bool use_bitmasks;
 static pid_t child = -1;
 static int sock = -1;
 static mp240_shm *shm;
-static uint32_t front = 0;     /* triple-buffer index owned by the core */
-static bool have_frame;
+static uint32_t front[2];      /* per layer: triple-buffer index owned by the core */
+static bool have_frame[2];
+static int shown_layer = -1;
 static bool child_gone;
 static uint32_t frame_count;
 static double audio_acc;
@@ -107,6 +109,8 @@ static void send_msg(const mp240_msg *m)
 static void send_mode(void)
 {
    mp240_msg m = { .type = MP240_MSG_MODE };
+   shm->mode_width = mode->width;
+   shm->mode_height = mode->height;
    m.u.mode.width = mode->width;
    m.u.mode.height = mode->height;
    m.u.mode.fps = (float)FPS;
@@ -258,7 +262,10 @@ static bool spawn_child(const char *path, int child_sock, int shm_fd)
    posix_spawnattr_init(&attr);
    posix_spawnattr_setsigmask(&attr, &none);
    posix_spawnattr_setsigdefault(&attr, &all);
-   posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+   /* Its own process group, so whatever 240-MP starts (mpv) can be cleaned
+    * up with it, see retro_unload_game. */
+   posix_spawnattr_setpgroup(&attr, 0);
+   posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP);
 
    err = posix_spawn(&child, path, &fa, &attr, argv, envp);
    posix_spawn_file_actions_destroy(&fa);
@@ -299,8 +306,10 @@ bool retro_load_game(const struct retro_game_info *game)
    }
    shm->magic = MP240_BRIDGE_MAGIC;
    shm->version = MP240_BRIDGE_VERSION;
-   shm->middle = 1;  /* core owns 0, child starts with 2 */
-   front = 0;
+   /* Per layer: the core owns buffer 0, the producer starts with 2. */
+   shm->layer[MP240_LAYER_UI].middle = 1;
+   shm->layer[MP240_LAYER_VIDEO].middle = 1;
+   front[0] = front[1] = 0;
 
    if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, pair) < 0)
       goto fail;
@@ -312,7 +321,8 @@ bool retro_load_game(const struct retro_game_info *game)
    sock = pair[0];
 
    black = calloc((size_t)MP240_MAX_WIDTH * MP240_MAX_HEIGHT, sizeof *black);
-   have_frame = child_gone = false;
+   have_frame[0] = have_frame[1] = child_gone = false;
+   shown_layer = -1;
    frame_count = 0;
    audio_acc = 0;
    send_mode();
@@ -356,6 +366,8 @@ void retro_unload_game(void)
          kill(child, SIGKILL);
          waitpid(child, NULL, 0);
       }
+      /* Anything 240-MP left behind in its group is an orphan now. */
+      kill(-child, SIGKILL);
       child = -1;
    }
    if (sock >= 0)
@@ -405,20 +417,40 @@ static void send_tick(void)
    send_msg(&m);
 }
 
+/* Takes the newest frame of a layer if there is one; true if it was new. */
+static bool take_frame(int layer)
+{
+   if (!(mp240_load(&shm->layer[layer].middle) & MP240_FRESH))
+      return false;
+   front[layer] = mp240_exchange(&shm->layer[layer].middle, front[layer]) & 3u;
+   if (layer == MP240_LAYER_VIDEO)
+      mp240_store(&shm->video_front, front[layer]);
+   have_frame[layer] = true;
+   return true;
+}
+
 static void present_video(void)
 {
+   bool fresh_ui = take_frame(MP240_LAYER_UI);
+   bool fresh_video = take_frame(MP240_LAYER_VIDEO);
+   int layer = MP240_LAYER_UI;
+   bool fresh = fresh_ui;
    const mp240_frame_info *f;
-   bool fresh = false;
 
-   if (mp240_load(&shm->middle) & MP240_FRESH) {
-      front = mp240_exchange(&shm->middle, front) & 3u;
-      have_frame = fresh = true;
+   /* mpv's frames replace the UI while it plays (and has drawn something). */
+   if (have_frame[MP240_LAYER_VIDEO] && mp240_pid_alive(mp240_load(&shm->video_owner))) {
+      layer = MP240_LAYER_VIDEO;
+      fresh = fresh_video;
    }
-   if (!have_frame) {
+   if (layer != shown_layer) {
+      fresh = true;  /* a switch is never a dupe */
+      shown_layer = layer;
+   }
+   if (!have_frame[layer]) {
       video_cb(black, mode->width, mode->height, mode->width * 4);
       return;
    }
-   f = &shm->frame[front];
+   f = &shm->layer[layer].frame[front[layer]];
    if (f->width == 0 || f->width > MP240_MAX_WIDTH || f->height == 0 ||
        f->height > MP240_MAX_HEIGHT || f->pitch < f->width * 4 ||
        (size_t)f->pitch * f->height > MP240_FRAME_BYTES) {
@@ -426,35 +458,42 @@ static void present_video(void)
       return;
    }
    /* An unchanged frame is a dupe: the frontend shows the last one again. */
-   video_cb(fresh ? (const uint8_t *)shm + MP240_FRAME_OFFSET(front) : NULL,
+   video_cb(fresh ? (const uint8_t *)shm + MP240_FRAME_OFFSET(layer, front[layer]) : NULL,
             f->width, f->height, f->pitch);
 }
 
-/* Exactly one CRT frame of audio per run, padded with silence: consuming at
- * a constant rate is what paces mpv's playback to the CRT clock. */
+/* Exactly one CRT frame of audio per run, mixed from every stream and padded
+ * with silence: consuming at a constant rate is what paces mpv's playback to
+ * the CRT clock. */
 static void play_audio(void)
 {
    static int16_t buf[MAX_AUDIO_PER_RUN * 2];
-   uint32_t w = mp240_load(&shm->audio_write);
-   uint32_t r = shm->audio_read;
-   uint32_t avail = w - r, take, i;
-   unsigned n;
+   static int32_t mix[MAX_AUDIO_PER_RUN * 2];
+   unsigned n, i, st;
 
    audio_acc += MP240_AUDIO_RATE / FPS;
    n = (unsigned)audio_acc;
    audio_acc -= n;
    if (n > MAX_AUDIO_PER_RUN)
       n = MAX_AUDIO_PER_RUN;
-   if (avail > MP240_AUDIO_FRAMES)  /* corrupt counters: resync */
-      avail = 0, r = w;
-   take = avail < n ? avail : n;
-   for (i = 0; i < take; i++) {
-      uint32_t s = (r + i) & (MP240_AUDIO_FRAMES - 1);
-      buf[i * 2] = shm->audio[s * 2];
-      buf[i * 2 + 1] = shm->audio[s * 2 + 1];
+   memset(mix, 0, n * 2 * sizeof *mix);
+
+   for (st = 0; st < MP240_AUDIO_STREAMS; st++) {
+      mp240_audio_stream *s = &shm->audio[st];
+      uint32_t w = mp240_load(&s->write), r = s->read;
+      uint32_t avail = w - r, take;
+      if (avail > MP240_AUDIO_FRAMES)  /* corrupt counters: resync */
+         avail = 0, r = w;
+      take = avail < n ? avail : n;
+      for (i = 0; i < take; i++) {
+         uint32_t slot = (r + i) & (MP240_AUDIO_FRAMES - 1);
+         mix[i * 2] += s->data[slot * 2];
+         mix[i * 2 + 1] += s->data[slot * 2 + 1];
+      }
+      mp240_store(&s->read, r + take);
    }
-   memset(buf + take * 2, 0, (n - take) * 2 * sizeof *buf);
-   mp240_store(&shm->audio_read, r + take);
+   for (i = 0; i < n * 2; i++)
+      buf[i] = (int16_t)(mix[i] > 32767 ? 32767 : mix[i] < -32768 ? -32768 : mix[i]);
    audio_batch_cb(buf, n);
 }
 

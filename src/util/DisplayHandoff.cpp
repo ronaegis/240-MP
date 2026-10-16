@@ -47,10 +47,17 @@ DisplayHandoff::~DisplayHandoff() {
 
 bool DisplayHandoff::isHeadless() {
 #ifdef Q_OS_LINUX
+    if (isLibretroBridge())
+        return false;
     return qgetenv("DISPLAY").isEmpty() && qgetenv("WAYLAND_DISPLAY").isEmpty();
 #else
     return false;
 #endif
+}
+
+bool DisplayHandoff::isLibretroBridge() {
+    // Set by the core for 240-MP and inherited by everything it starts.
+    return qEnvironmentVariableIsSet("MP240_BRIDGE_SHM");
 }
 
 bool DisplayHandoff::isHeldBy(const QString &owner) const {

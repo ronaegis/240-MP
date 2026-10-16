@@ -658,7 +658,13 @@ void MpvController::appendVideoArgs(QStringList &args) const {
         }
     }
 
-    if (m_headlessMode) {
+    if (DisplayHandoff::isLibretroBridge()) {
+        // ReplayOS: "mpv" is the bridge stand-in (libretro/mpv_bridge.c), which
+        // always renders through libmpv into the core's video layer, so only
+        // the decoder is chosen here. Pi 5 is the only bridge target so far;
+        // auto-safe picks its HEVC decoder (drm) and decodes the rest in software.
+        args << "--hwdec=auto-safe";
+    } else if (m_headlessMode) {
         if (m_videoProfile == VideoProfile::Pi4) {
             // Pi 4B: native --vo=drm draws on the primary plane with precise KMS
             // page-flip timing (smooth cadence). v4l2m2m-copy keeps decode on the

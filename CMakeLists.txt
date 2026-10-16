@@ -97,6 +97,17 @@ if(MP240_LIBRETRO_BRIDGE)
     target_link_options(240mp_libretro PRIVATE
         -Wl,--no-undefined -Wl,--version-script=${CMAKE_SOURCE_DIR}/libretro/link.T)
 
+    # Takes mpv's place under ReplayOS (installed as bin/mpv, which
+    # mpvbin::locate() prefers): libmpv rendering and playing through the bridge.
+    pkg_check_modules(Mpv REQUIRED IMPORTED_TARGET mpv)
+    pkg_check_modules(Gpu REQUIRED IMPORTED_TARGET egl glesv2 gbm)
+    add_executable(240mp_mpv libretro/mpv_bridge.c)
+    set_target_properties(240mp_mpv PROPERTIES OUTPUT_NAME mpv)
+    target_include_directories(240mp_mpv PRIVATE libretro)
+    target_compile_options(240mp_mpv PRIVATE -Wall -Wextra)
+    target_link_libraries(240mp_mpv PRIVATE PkgConfig::Mpv PkgConfig::Gpu)
+    install(TARGETS 240mp_mpv RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT Runtime)
+
     # Stand-in for 240-MP that speaks the bridge protocol without Qt, for
     # checking the core on its own (see the comment at the top of the file).
     add_executable(240mp_test_child libretro/test_child.c)

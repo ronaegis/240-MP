@@ -59,6 +59,11 @@ public:
     // compositor, which is the only case that needs a hand-off.
     static bool isHeadless();
 
+    // True when 240-MP runs under the ReplayOS core (src/bridge/): the
+    // frontend owns the display and mpv draws through the bridge, so there is
+    // nothing to hand off either.
+    static bool isLibretroBridge();
+
     // True only while this owner holds a hand-off that has a VT to return to.
     // Callers use it as a re-entrancy guard: acquiring twice without releasing
     // would overwrite the saved VT with the free one we just switched to.

@@ -23,6 +23,7 @@
 
 static mp240_shm *shm;
 static uint32_t back = 2, width, height;
+static int stream = -1;
 static double phase;
 
 static void fill(uint32_t *px, uint32_t pitch_px, uint32_t x0, uint32_t y0,
@@ -38,7 +39,7 @@ static void render(uint32_t frame, uint16_t joypad)
 {
    static const uint32_t bars[] = { 0xffffff, 0xffff00, 0x00ffff, 0x00ff00,
                                     0xff00ff, 0xff0000, 0x0000ff, 0x000000 };
-   uint32_t *px = (uint32_t *)((uint8_t *)shm + MP240_FRAME_OFFSET(back));
+   uint32_t *px = (uint32_t *)((uint8_t *)shm + MP240_FRAME_OFFSET(MP240_LAYER_UI, back));
    uint32_t x, y, b, box = width / 20;
 
    for (y = 0; y < height; y++)
@@ -49,25 +50,24 @@ static void render(uint32_t frame, uint16_t joypad)
            (joypad & (1u << b)) ? 0xff8000 : 0x404040);
    fill(px, width, frame % width, height / 3, 4, height / 3, 0x000000);
 
-   shm->frame[back].width = width;
-   shm->frame[back].height = height;
-   shm->frame[back].pitch = width * 4;
-   shm->frame[back].seq = frame;
-   back = mp240_exchange(&shm->middle, back | MP240_FRESH) & 3u;
+   shm->layer[MP240_LAYER_UI].frame[back].width = width;
+   shm->layer[MP240_LAYER_UI].frame[back].height = height;
+   shm->layer[MP240_LAYER_UI].frame[back].pitch = width * 4;
+   shm->layer[MP240_LAYER_UI].frame[back].seq = frame;
+   back = mp240_publish(shm, MP240_LAYER_UI, back);
 }
 
 /* Keep about 50 ms queued; the core's constant drain paces us. */
 static void feed_audio(void)
 {
-   uint32_t w = shm->audio_write, r = mp240_load(&shm->audio_read);
-   while (w - r < MP240_AUDIO_RATE / 20) {
-      uint32_t s = w & (MP240_AUDIO_FRAMES - 1);
-      int16_t v = (int16_t)(sin(phase) * 6000);
+   int16_t pcm[2];
+   if (stream < 0 && (stream = mp240_audio_claim(shm)) < 0)
+      return;
+   while (mp240_audio_queued(shm, stream) < MP240_AUDIO_RATE / 20) {
+      pcm[0] = pcm[1] = (int16_t)(sin(phase) * 6000);
       phase += 2 * M_PI * 440 / MP240_AUDIO_RATE;
-      shm->audio[s * 2] = shm->audio[s * 2 + 1] = v;
-      w++;
+      mp240_audio_write(shm, stream, pcm, 1);
    }
-   mp240_store(&shm->audio_write, w);
 }
 
 int main(void)

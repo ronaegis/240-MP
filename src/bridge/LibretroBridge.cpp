@@ -20,6 +20,7 @@
 #include <cerrno>
 #include <cstring>
 #include <utility>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -150,9 +151,13 @@ LibretroBridge::~LibretroBridge() {
 
 bool LibretroBridge::open() {
     m_sock = qEnvironmentVariableIntValue("MP240_BRIDGE_SOCK");
+    // Processes 240-MP starts must not hold the socket: the core watches it
+    // to notice that 240-MP is gone. The shared memory descriptor (and the
+    // MP240_BRIDGE_SHM variable naming it) stays inheritable on purpose: the
+    // mpv stand-in (libretro/mpv_bridge.c) draws and plays through it.
+    fcntl(m_sock, F_SETFD, FD_CLOEXEC);
     const int shmFd = qEnvironmentVariableIntValue("MP240_BRIDGE_SHM");
     void *p = mmap(nullptr, MP240_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
-    ::close(shmFd);
     if (p == MAP_FAILED) {
         qCritical("[bridge] cannot map shared memory: %s", strerror(errno));
         return false;
@@ -345,7 +350,7 @@ void LibretroBridge::renderFrame() {
 
 void LibretroBridge::publishFrame() {
     const int w = m_size.width(), h = m_size.height();
-    auto *pixels = reinterpret_cast<uint8_t *>(m_shm) + MP240_FRAME_OFFSET(m_back);
+    auto *pixels = reinterpret_cast<uint8_t *>(m_shm) + MP240_FRAME_OFFSET(MP240_LAYER_UI, m_back);
     QOpenGLFunctions *gl = m_context->functions();
 
     m_fbo->bind();
@@ -358,10 +363,10 @@ void LibretroBridge::publishFrame() {
             std::swap(pixels[i * 4], pixels[i * 4 + 2]);
     }
 
-    mp240_frame_info &info = m_shm->frame[m_back];
+    mp240_frame_info &info = m_shm->layer[MP240_LAYER_UI].frame[m_back];
     info.width = uint32_t(w);
     info.height = uint32_t(h);
     info.pitch = uint32_t(w) * 4;
     info.seq++;
-    m_back = mp240_exchange(&m_shm->middle, m_back | MP240_FRESH) & 3u;
+    m_back = mp240_publish(m_shm, MP240_LAYER_UI, m_back);
 }

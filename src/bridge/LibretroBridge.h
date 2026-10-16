@@ -63,7 +63,7 @@ private:
     InputManager *m_input;
     int m_sock = -1;
     mp240_shm *m_shm = nullptr;
-    uint32_t m_back = 2;           // triple-buffer index we render into
+    uint32_t m_back = 2;           // UI layer buffer we render into
     QSocketNotifier *m_notifier = nullptr;
 
     std::unique_ptr<QOpenGLContext> m_context;

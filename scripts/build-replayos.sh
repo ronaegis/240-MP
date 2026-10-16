@@ -4,7 +4,8 @@
 # Runs in Docker (Debian trixie arm64, packaging/replayos/Dockerfile) and
 # produces, in build-replayos/:
 #   240mp_libretro.so         the core, for /opt/replay/cores
-#   240mp-replayos.tar.gz     240-MP for /opt/240mp: bin/, lib/ (everything
+#   240mp-replayos.tar.gz     240-MP for /opt/240mp: bin/ (240mp, the mpv
+#                             stand-in, the launcher), lib/ (everything
 #                             ReplayOS lacks, per packaging/replayos/system-libs.txt),
 #                             plugins/, qml/, share/240mp/
 # Install with scripts/deploy-replayos.sh.
@@ -41,7 +42,7 @@ cp -r $Q/qml/QtQml $OUT/qml/
 mkdir -p $OUT/lib
 grep -v "^#" packaging/replayos/system-libs.txt > /tmp/system-libs
 for pass in 1 2 3 4; do
-  find $OUT/bin/240mp $OUT/lib $OUT/plugins $OUT/qml -name "*.so*" -o -name 240mp -type f | while read -r e; do
+  find $OUT/bin/240mp $OUT/bin/mpv $OUT/lib $OUT/plugins $OUT/qml -name "*.so*" -o -name 240mp -type f -o -name mpv -type f | while read -r e; do
     ldd "$e" 2>/dev/null | awk "/=> \\//{print \$1\" \"\$3}" | while read -r name path; do
       case "$path" in */pulseaudio/*) continue;; esac
       grep -qxF "$name" /tmp/system-libs || [ -e "$OUT/lib/$name" ] || cp -L "$path" "$OUT/lib/$name"
@@ -54,7 +55,7 @@ done
 find $OUT/lib $OUT/plugins $OUT/qml -type f -name "*.so*" | while read -r f; do
   patchelf --set-rpath "\$ORIGIN/$(realpath --relative-to="$(dirname "$f")" $OUT/lib)" "$f"
 done
-patchelf --force-rpath --set-rpath "\$ORIGIN/../lib" $OUT/bin/240mp
+patchelf --force-rpath --set-rpath "\$ORIGIN/../lib" $OUT/bin/240mp $OUT/bin/mpv
 
 tar -C $B/stage/opt -czf $B/240mp-replayos.tar.gz 240mp
 echo "bundle: $(du -sh $OUT | cut -f1), $(ls $OUT/lib | wc -l) libraries"
