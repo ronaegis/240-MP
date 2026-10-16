@@ -120,6 +120,7 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 
 ## Install
 - [On a Raspberry Pi](INSTALL.md#on-a-raspberry-pi)
+- [On ReplayOS (Raspberry Pi 5)](INSTALL.md#on-replayos-raspberry-pi-5)
 - [On macOS (ARM)](INSTALL.md#on-macos-arm)
 - [On SteamOS / Linux x86_64](INSTALL.md#on-steamos--linux-x86_64)
 
