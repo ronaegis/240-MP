@@ -65,7 +65,9 @@ trap 'rm -rf "$work"' EXIT
 if [ -n "$local_bundle" ]; then
    bundle="$local_bundle"
 else
-   [ "$REPO" != "@REPO@" ] || die "no repository set (MP240_REPO=owner/240-MP)"
+   # Still the placeholder (a copy from the source tree, not from a release);
+   # tested by its "@" because the release workflow replaces every "@REPO@".
+   case "$REPO" in *@*) die "no repository set (MP240_REPO=owner/240-MP)" ;; esac
    if [ "$version" = latest ]; then
       base="https://github.com/$REPO/releases/latest/download"
    else

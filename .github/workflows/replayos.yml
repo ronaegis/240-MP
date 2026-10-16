@@ -55,7 +55,7 @@ jobs:
           body: |
             ReplayOS (Raspberry Pi 5): on the Pi, as root, run
             `curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install-replayos.sh | bash`
-            then open Favorites → 240-MP. See [these instructions](INSTALL.md#on-replayos-raspberry-pi-5).
+            then open Favorites → 240-MP. See [these instructions](https://github.com/${{ github.repository }}/blob/${{ env.TAG }}/INSTALL.md#on-replayos-raspberry-pi-5).
           files: |
             dist/240-MP-*-replayos-arm64.tar.gz
             dist/install-replayos.sh
