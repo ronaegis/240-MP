@@ -219,8 +219,11 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         // subs disabled or provided via transcode
         args << QStringLiteral("--sid=no");
     else if (subTrack == -1)
-        // forced subs only
-        args << QStringLiteral("--subs-with-matching-audio=forced") << QStringLiteral("--subs-fallback-forced=always");
+        // forced subs only. --subs-fallback=no: its default ("default") still
+        // picks a sub flagged default when no language matches, so a Plex
+        // file with a default English track showed subs with them OFF.
+        args << QStringLiteral("--subs-with-matching-audio=forced") << QStringLiteral("--subs-fallback-forced=always")
+             << QStringLiteral("--subs-fallback=no");
     else if (subTrack == 0) {
         // Always display subs, even if the audio and subtitle languages match
         args << QStringLiteral("--subs-with-matching-audio=yes") << QStringLiteral("--subs-fallback=yes");
