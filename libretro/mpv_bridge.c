@@ -460,7 +460,7 @@ int main(int argc, char **argv)
    set_default("osc", "yes");
    set_default("input-default-bindings", "yes");
    set_default("idle", "once");
-   set_default("hwdec", "auto-safe");
+   set_default("hwdec", "drm,no");  /* Pi 5: HEVC in hardware, the rest in software */
    set_default("profile", "fast");
    set_default("vo", "libmpv");
    set_default("ao", "pcm");

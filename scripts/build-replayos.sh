@@ -5,7 +5,8 @@
 # produces, in build-replayos/:
 #   240mp_libretro.so         the core, for /opt/replay/cores
 #   240mp-replayos.tar.gz     240-MP for /opt/240mp: bin/ (240mp, the mpv
-#                             stand-in, the launcher), lib/ (everything
+#                             stand-in, the launcher, yt-dlp and deno for the
+#                             YouTube module), lib/ (everything
 #                             ReplayOS lacks, per packaging/replayos/system-libs.txt),
 #                             plugins/, qml/, share/240mp/
 # Install with scripts/deploy-replayos.sh.
@@ -13,6 +14,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE=mp240-replayos-build
 VERSION="${APP_VERSION:-dev}"
+
+# yt-dlp and Deno (the JavaScript runtime current yt-dlp needs for YouTube),
+# latest releases, verified against their published SHA-256 sums. yt-dlp is
+# the standalone build: it does not depend on ReplayOS keeping its Python,
+# and `yt-dlp -U` still updates it in place on the Pi.
+DL="$ROOT/build-replayos/downloads"
+mkdir -p "$DL"
+fetch_verified() {  # <url> <file> <sums url> <name in sums>
+   curl -fsSL "$3" | awk -v n="$4" -v f="$2" '$2 == n || $2 == "*" n { print $1 "  " f }' > "$DL/$2.sha256"
+   [ -s "$DL/$2.sha256" ] || { echo "no checksum for $4" >&2; exit 1; }
+   if ! (cd "$DL" && shasum -a 256 -c --status "$2.sha256" 2>/dev/null); then
+      curl -fsSL -o "$DL/$2" "$1"
+      (cd "$DL" && shasum -a 256 -c "$2.sha256")
+   fi
+}
+GH=https://github.com
+fetch_verified "$GH/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64" yt-dlp \
+   "$GH/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS" yt-dlp_linux_aarch64
+fetch_verified "$GH/denoland/deno/releases/latest/download/deno-aarch64-unknown-linux-gnu.zip" deno.zip \
+   "$GH/denoland/deno/releases/latest/download/deno-aarch64-unknown-linux-gnu.zip.sha256sum" deno-aarch64-unknown-linux-gnu.zip
+rm -rf "$DL/deno" && unzip -q -o "$DL/deno.zip" -d "$DL/deno"
 
 docker build --platform linux/arm64 -q -t "$IMAGE" "$ROOT/packaging/replayos" >/dev/null
 docker run --rm --platform linux/arm64 -v "$ROOT:/src" -w /src -e VERSION="$VERSION" "$IMAGE" bash -euo pipefail -c '
@@ -23,6 +45,8 @@ cmake --build $B
 rm -rf $B/stage && DESTDIR=$PWD/$B/stage cmake --install $B >/dev/null
 OUT=$B/stage/opt/240mp
 install -m 755 packaging/replayos/240mp-bridge $OUT/bin/
+install -m 755 $B/downloads/yt-dlp $OUT/bin/yt-dlp
+install -m 755 $B/downloads/deno/deno $OUT/bin/deno
 
 # Qt plugins and QML modules 240-MP uses (imports: QtQuick, QtQuick.Window,
 # QtQuick.Effects; tls for HTTPS to media servers).

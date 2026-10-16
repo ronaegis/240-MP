@@ -279,10 +279,10 @@ This builds with `-DMP240_LIBRETRO_BRIDGE=ON` and produces, in `build-replayos/`
 | File | What |
 |---|---|
 | `240mp_libretro.so` | the core, for `/opt/replay/cores` |
-| `240mp-replayos.tar.gz` | `/opt/240mp`: `bin/240mp`, `bin/mpv` (the mpv stand-in, `libretro/mpv_bridge.c`), `bin/240mp-bridge` (launcher), `lib/`, `plugins/`, `qml/`, `share/240mp/` |
+| `240mp-replayos.tar.gz` | `/opt/240mp`: `bin/240mp`, `bin/mpv` (the mpv stand-in, `libretro/mpv_bridge.c`), `bin/240mp-bridge` (launcher), `bin/yt-dlp` + `bin/deno` (YouTube module), `lib/`, `plugins/`, `qml/`, `share/240mp/` |
 | `240mp_test_child` | stand-in for 240-MP that shows a test pattern, plays a tone and logs input, for checking the core alone |
 
-`lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
+`lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Unlike the AppImage, the bundle **does** carry yt-dlp and Deno (the JavaScript runtime current yt-dlp needs for YouTube), because ReplayOS has no way to install them. The build downloads both from their latest GitHub releases and checks their published SHA-256 sums; they are cached in `build-replayos/downloads/`. yt-dlp is the standalone build, so it doesn't depend on ReplayOS's Python. To update it between deploys, run `ssh root@replay /opt/240mp/bin/yt-dlp -U`. A copy at `/media/sd/240mp/bin/yt-dlp` takes precedence, as on other platforms. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
 
 ### Install on the Pi
 

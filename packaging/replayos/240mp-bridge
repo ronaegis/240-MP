@@ -25,5 +25,7 @@ export APP_ROOT="$ROOT/share/240mp"
 # edited from a computer.
 export DATA_ROOT="${MP240_DATA_ROOT:-/media/sd/240mp}"
 export HOME="${HOME:-/root}"
+# The bundled yt-dlp finds the bundled deno (its JavaScript runtime) on PATH.
+export PATH="$BIN:$PATH"
 mkdir -p "$DATA_ROOT"
 exec "$BIN/240mp"

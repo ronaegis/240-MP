@@ -347,6 +347,7 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
 - **Video mode:** in ReplayOS's core options for 240-MP, choose 640x480i (sharper text) or 320x240p.
 - **Controls:** your controllers work as they do in ReplayOS. ReplayOS's menu combo (Select+Start) leaves 240-MP.
 - **Settings** are stored in `/media/sd/240mp/` on the SD card, so they survive ReplayOS updates.
+- **YouTube:** yt-dlp and its JavaScript runtime (Deno) are included. When YouTube changes and playback stops working, update yt-dlp with `ssh root@replay /opt/240mp/bin/yt-dlp -U`.
 
 ### Update
 

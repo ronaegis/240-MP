@@ -27,7 +27,7 @@ mv /opt/replay/cores/.240mp_libretro.so.new /opt/replay/cores/240mp_libretro.so
 
 # Every bundled binary must resolve all its libraries on this system, through
 # its own RPATH as at runtime (no LD_LIBRARY_PATH).
-missing=$(find /opt/240mp/bin/240mp /opt/240mp/bin/mpv /opt/240mp/lib /opt/240mp/plugins /opt/240mp/qml -name "*.so*" -o -name 240mp -type f -o -name mpv -type f |
+missing=$(find /opt/240mp/bin /opt/240mp/lib /opt/240mp/plugins /opt/240mp/qml -type f |
           while read -r f; do ldd "$f" 2>/dev/null | grep "not found" | sed "s|^|$f: |"; done)
 if [ -n "$missing" ]; then echo "missing libraries:"; echo "$missing"; exit 1; fi
 
