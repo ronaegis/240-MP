@@ -321,6 +321,11 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     // matching the 1080p Playback trade-off. The OSC CROP button still toggles live.
     if (autoCropEnabled() && !cropUnavailable())
         args << QStringLiteral("--panscan=1");
+    // Auto Crop [AUTO]: crop only the black bars inside the picture (a 4:3 show
+    // in a 16:9 file), measured live by the script. Video only.
+    const QString autoCropScript = m_appRoot + "/scripts/mpv-autocrop.lua";
+    if (autoCropDetect() && !cropUnavailable() && !imageContent && QFile::exists(autoCropScript))
+        args << QString("--script=%1").arg(autoCropScript);
 
     // Video Levels: the RGB range mpv converts YUV into. Emitted only when the
     // user has overridden it, so "Auto" leaves both mpv's own default and
@@ -749,6 +754,13 @@ bool MpvController::autoCropEnabled() const {
         return false;
     const QVariant v = m_appCore->get_setting(QString(), "auto_crop");
     return v.toString().compare(QStringLiteral("On"), Qt::CaseInsensitive) == 0;
+}
+
+bool MpvController::autoCropDetect() const {
+    if (!m_appCore)
+        return false;
+    const QVariant v = m_appCore->get_setting(QString(), "auto_crop");
+    return v.toString().compare(QStringLiteral("Auto"), Qt::CaseInsensitive) == 0;
 }
 
 QString MpvController::videoOutputLevels() const {

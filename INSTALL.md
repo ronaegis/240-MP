@@ -342,11 +342,15 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
    This downloads the latest release (about 135 MB), checks it against its published checksum, installs it to `/opt/240mp`, and adds 240-MP to ReplayOS's core list. To install a specific release, put `-s -- --version v2026.10.15-replayos.1` after `bash`.
 2. Open **Favorites → 240-MP**.
 
+240-MP goes on the storage ReplayOS is set to use (**System → Storage**: SD card, NVMe, USB or NFS). If you change the storage later, run the install command again.
+
 ### Post Install
 
 - **Video mode:** in ReplayOS's core options for 240-MP, choose 640x480i (sharper text) or 320x240p.
 - **Controls:** your controllers work as they do in ReplayOS. ReplayOS's menu combo (Select+Start) leaves 240-MP.
-- **Settings** are stored in `/media/sd/240mp/` on the SD card, so they survive ReplayOS updates.
+- **Settings** are stored in `240mp/` on the same storage as your games (for example `/media/nvme/240mp/`), or on the SD card when ReplayOS's data location is set to Local SD. They survive ReplayOS updates. Settings from the SD card are copied over the first time 240-MP starts on another storage.
+- **Your own videos:** in Local Files' settings, choose **Media Directory**. The folder browser starts at the root of the storage (for example `/media/nvme`). By default Local Files shows `240mp/media/` on that storage.
+- **Auto Crop → Auto** (in Settings) crops black bars that are part of the picture, so a 4:3 video inside a 16:9 frame, as most YouTube uploads of old shows are, fills the screen.
 - **YouTube:** yt-dlp and its JavaScript runtime (Deno) are included. When YouTube changes and playback stops working, update yt-dlp with `ssh root@replay /opt/240mp/bin/yt-dlp -U`.
 
 ### Update
@@ -359,7 +363,7 @@ Run the install command again. A running session isn't disturbed; the new versio
 curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash -s -- --uninstall
 ```
 
-This removes 240-MP, its core and its entry in ReplayOS's core list, leaving other cores alone. Add `--keep-settings` to keep `/media/sd/240mp/`.
+This removes 240-MP, its core and its entry in ReplayOS's core list, leaving other cores alone. Add `--keep-settings` to keep the `240mp/` settings folder.
 
 ## On SteamOS / Linux x86_64
 

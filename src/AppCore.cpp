@@ -451,7 +451,10 @@ QString AppCore::parentDirectory(const QString &path) {
 }
 
 QString AppCore::homePath() {
-    return QDir::homePath();
+    // Where folder pickers start. The ReplayOS launcher points it at the
+    // storage holding the games (e.g. /media/nvme) rather than /root.
+    const QString start = qEnvironmentVariable("MP240_BROWSE_HOME");
+    return start.isEmpty() ? QDir::homePath() : start;
 }
 
 // A device typically has several addresses (RPi: eth0 + wlan0; SteamOS: wlan0 plus

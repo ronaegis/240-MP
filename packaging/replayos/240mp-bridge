@@ -4,6 +4,7 @@
 # Sets up the bundled Qt and runs 240-MP in bridge mode.
 BIN=$(dirname "$(readlink -f "$0")")
 ROOT=$(dirname "$BIN")
+. "$BIN/replayos-storage.sh"
 
 # Qt renders off-screen on the GPU. eglfs needs the KMS device that has
 # connectors to start, but never shows a window, so it never takes the
@@ -21,9 +22,26 @@ export QT_QPA_EGLFS_HIDECURSOR=1
 export QT_PLUGIN_PATH="$ROOT/plugins"
 export QML_IMPORT_PATH="$ROOT/qml"
 export APP_ROOT="$ROOT/share/240mp"
-# On the SD card's exFAT partition: survives ReplayOS updates and can be
-# edited from a computer.
-export DATA_ROOT="${MP240_DATA_ROOT:-/media/sd/240mp}"
+# Settings go with the games, on the storage picked in ReplayOS (System >
+# Storage: SD, NVMe, USB or NFS), unless its data location is the local SD.
+# Read at every start, so they follow a storage change. Off /opt, so they
+# survive ReplayOS updates.
+storage=$(storage_dir)
+data=$storage
+[ "$(replay_cfg system_data_location)" = local_sd ] && data=/media/sd
+export DATA_ROOT="${MP240_DATA_ROOT:-$data/240mp}"
+# Settings made on the SD card before 240-MP followed the storage (or before
+# a storage change) come along once. Media files stay where they are.
+old=/media/sd/240mp
+if [ "$DATA_ROOT" != "$old" ] && [ ! -e "$DATA_ROOT" ] && [ -f "$old/config.json" ]; then
+   echo "240mp-bridge: copying settings from $old to $DATA_ROOT" >&2
+   mkdir -p "$DATA_ROOT"
+   for f in "$old"/*; do
+      [ "${f##*/}" = media ] || cp -R "$f" "$DATA_ROOT/"
+   done
+fi
+# Folder pickers in Settings start on that storage.
+export MP240_BROWSE_HOME="$storage"
 export HOME="${HOME:-/root}"
 # The bundled yt-dlp finds the bundled deno (its JavaScript runtime) on PATH.
 export PATH="$BIN:$PATH"

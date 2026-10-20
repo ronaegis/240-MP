@@ -107,6 +107,9 @@ private:
     // App-level "auto_crop" setting (default OFF). When ON, playback starts with
     // panscan=1 so video fills a CRT/4:3 screen by default (still toggleable live).
     bool autoCropEnabled() const;
+    // App-level "auto_crop" set to "Auto": loads scripts/mpv-autocrop.lua, which
+    // crops black bars detected in the picture instead of filling the screen.
+    bool autoCropDetect() const;
     // True when the active decode path can't crop (Pi 3 overlay path with smooth
     // playback ON): --panscan blanks the video there. Gates auto-crop and tells
     // the OSC scripts to hide their CROP button.

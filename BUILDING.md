@@ -285,7 +285,7 @@ This builds with `-DMP240_LIBRETRO_BRIDGE=ON` and produces, in `build-replayos/`
 | `bin/240mp_test_child` | stand-in for 240-MP that shows a test pattern, plays a tone and logs input, for checking the core alone |
 | `lib/`, `plugins/`, `qml/`, `share/240mp/`, `VERSION` | everything else 240-MP needs |
 
-`lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Unlike the AppImage, the bundle **does** carry yt-dlp and Deno (the JavaScript runtime current yt-dlp needs for YouTube), because ReplayOS has no way to install them. The build downloads both from their latest GitHub releases and checks their published SHA-256 sums; they are cached in `build-replayos/downloads/`. yt-dlp is the standalone build, so it doesn't depend on ReplayOS's Python. To update it between deploys, run `ssh root@replay /opt/240mp/bin/yt-dlp -U`. A copy at `/media/sd/240mp/bin/yt-dlp` takes precedence, as on other platforms. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
+`lib/` holds every shared library ReplayOS lacks: Qt 6.8, ICU, libmpv and their dependencies. Whatever is listed in `packaging/replayos/system-libs.txt` is left out; that list is `ldconfig -p` taken from ReplayOS (regenerate it after a ReplayOS update). FFmpeg is deliberately the system's, because ReplayOS's build has the Pi's hardware decoders. Unlike the AppImage, the bundle **does** carry yt-dlp and Deno (the JavaScript runtime current yt-dlp needs for YouTube), because ReplayOS has no way to install them. The build downloads both from their latest GitHub releases and checks their published SHA-256 sums; they are cached in `build-replayos/downloads/`. yt-dlp is the standalone build, so it doesn't depend on ReplayOS's Python. To update it between deploys, run `ssh root@replay /opt/240mp/bin/yt-dlp -U`. A copy at `bin/yt-dlp` in the configuration folder takes precedence, as on other platforms. Every ELF in the bundle gets an `$ORIGIN`-relative rpath, so nothing relies on `LD_LIBRARY_PATH`.
 
 ### Install on the Pi
 
@@ -297,7 +297,7 @@ It copies the bundle over and runs the same installer releases use, `scripts/ins
 - Runs `ldd` on every bundled binary and plugin **without** `LD_LIBRARY_PATH`, and refuses to install if anything is `not found`.
 - Swaps `/opt/240mp` and `/opt/replay/cores/240mp_libretro.so` in atomically, so a running session keeps its files.
 - Adds a `[240mp]` section to `/opt/replay/cores/cores.cfg`; `--uninstall` removes that section only.
-- Creates an empty `/media/sd/roms/240mp/240-MP.lr` and a favorite for it.
+- Creates an empty `roms/240mp/240-MP.lr` and a favorite for it on the storage ReplayOS uses: `system_storage` in `/media/sd/config/replay.cfg` names the one mounted at `/media/<name>` (`packaging/replayos/replayos-storage.sh`, which the launcher shares).
 
 ReplayOS picks a core by matching `<section>/` against the content path, and an empty content file starts the core without content. The core then runs `/opt/240mp/bin/240mp-bridge`. A `.lr` file whose first line is a program path runs that program instead, for example `/opt/240mp/bin/240mp_test_child`.
 
@@ -316,7 +316,7 @@ It is separate from `release.yml`, so it also works on a fork without the macOS 
 
 **Favorites → 240-MP**. The core option **Video mode** switches between 640x480i and 320x240p live. Leave with ReplayOS's menu combo (Select+Start); quitting 240-MP also returns to the menu.
 
-Configuration lives in `/media/sd/240mp/` on the SD card's data partition, which survives ReplayOS updates and can be edited from a computer.
+Configuration lives in `240mp/` on the storage ReplayOS uses (`/media/sd/240mp/` on the SD card, or `/media/nvme/240mp/` and so on), or on the SD card when `system_data_location` is `local_sd`. The launcher works this out at every start, and copies an existing `/media/sd/240mp/` (all but `media/`) the first time the folder is missing. It survives ReplayOS updates and, being exFAT, can be edited from a computer. `MP240_DATA_ROOT` overrides it.
 
 ### Logs
 

@@ -46,6 +46,7 @@ cmake --build $B
 rm -rf $B/stage && DESTDIR=$PWD/$B/stage cmake --install $B >/dev/null
 OUT=$B/stage/opt/240mp
 install -m 755 packaging/replayos/240mp-bridge $B/240mp_test_child $OUT/bin/
+install -m 644 packaging/replayos/replayos-storage.sh $OUT/bin/
 install -D -m 755 $B/240mp_libretro.so $OUT/core/240mp_libretro.so
 echo "$VERSION" > $OUT/VERSION
 install -m 755 $B/downloads/yt-dlp $OUT/bin/yt-dlp

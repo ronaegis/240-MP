@@ -10,19 +10,20 @@
 # the bundle in /opt/240mp (Qt, mpv, yt-dlp... everything ReplayOS lacks).
 # ReplayOS picks a core by matching "<section>/" of /opt/replay/cores/cores.cfg
 # against the content path, so a [240mp] section and an empty
-# /media/sd/roms/240mp/240-MP.lr make it appear as a game. Settings live in
-# /media/sd/240mp, which ReplayOS updates leave alone.
+# roms/240mp/240-MP.lr make it appear as a game. That file and the favorite go
+# on the storage picked in ReplayOS (System > Storage: /media/sd, /media/nvme,
+# /media/usb or /media/nfs). Settings are kept in 240mp/ on that storage, which
+# ReplayOS updates leave alone.
 #
-# Re-run after a ReplayOS update: it may replace /opt/replay and its core list.
+# Re-run after a ReplayOS update (it may replace /opt/replay and its core
+# list) and after changing the storage.
 set -euo pipefail
 
 REPO="${MP240_REPO:-@REPO@}"     # filled in by the release workflow
 OPT=/opt/240mp
 CORES=/opt/replay/cores
 CFG=$CORES/cores.cfg
-ROMS=/media/sd/roms/240mp
-FAV="/media/sd/roms/_favorites/240mp@240-MP.lr.fav"
-DATA=/media/sd/240mp
+FAV_NAME="240mp@240-MP.lr.fav"
 
 version=latest local_bundle="" uninstall=false keep_settings=false
 while [ $# -gt 0 ]; do
@@ -48,12 +49,16 @@ remove_section() {
 }
 
 if $uninstall; then
-   rm -rf "$OPT" "$CORES/240mp_libretro.so" "$ROMS" "$FAV"
+   rm -rf "$OPT" "$CORES/240mp_libretro.so"
    grep -q '^\[240mp\]' "$CFG" && remove_section
+   # From every storage: the storage may have changed since the install.
+   for s in /media/*; do
+      rm -rf "$s/roms/240mp" "$s/roms/_favorites/$FAV_NAME"
+      $keep_settings || rm -rf "$s/240mp"
+   done
    if $keep_settings; then
-      echo "240-MP removed (settings kept in $DATA)"
+      echo "240-MP removed (settings kept in 240mp/ on the storage)"
    else
-      rm -rf "$DATA"
       echo "240-MP removed"
    fi
    exit 0
@@ -112,8 +117,15 @@ mv "$CORES/.240mp_libretro.so.new" "$CORES/240mp_libretro.so"
 
 grep -q '^\[240mp\]' "$CFG" ||
    printf '\n[240mp]\nlow = "240mp_libretro.so"\nmid = "240mp_libretro.so"\nhi = "240mp_libretro.so"\n' >> "$CFG"
-mkdir -p "$ROMS" "$DATA" "$(dirname "$FAV")"
-: > "$ROMS/240-MP.lr"
-printf '/roms/240mp/240-MP.lr' > "$FAV"
 
-echo "240-MP $(cat "$OPT/VERSION" 2>/dev/null || echo "") installed: Favorites -> 240-MP"
+# The game entry and its favorite (a path relative to the storage) go on the
+# storage ReplayOS uses now. 240-MP makes its settings folder there itself,
+# bringing along settings from the SD card if there are any.
+. "$OPT/bin/replayos-storage.sh"
+storage=$(storage_dir)
+mkdir -p "$storage/roms/240mp" "$storage/roms/_favorites"
+: > "$storage/roms/240mp/240-MP.lr"
+printf '/roms/240mp/240-MP.lr' > "$storage/roms/_favorites/$FAV_NAME"
+
+echo "240-MP $(cat "$OPT/VERSION" 2>/dev/null || echo "") installed on $storage: Favorites -> 240-MP"
+echo "After changing the storage in ReplayOS, run this again."

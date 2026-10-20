@@ -242,7 +242,7 @@ app constants →
 |---|---|---|---|
 | **App constants** | `--input-ipc-server`, `--input-conf`, `--osc`, `--script`, `--log-file`, `--no-input-terminal` | App only | command-line |
 | **App per-playback** | `--start`, `--aid`, `--sub-file`, `--http-header-fields` (stream URL, tokens) | App only | command-line |
-| **App presentation** | `--panscan` (Auto Crop), `--video-output-levels` (Video Levels) | User, via a Settings row | command-line |
+| **App presentation** | `--panscan` (Auto Crop On), `scripts/mpv-autocrop.lua` (Auto Crop Auto: `cropdetect` sets `--video-crop`), `--video-output-levels` (Video Levels) | User, via a Settings row | command-line |
 | **Device decode** | `--vo` / `--gpu-context` / `--hwdec` | App auto-detects; user may override via `mpv_video_args` | command-line |
 | **User prefs** | `deinterlace`, `cache`, `sub-scale`, `audio-device`, profiles | User | `mpv.conf` |
 
