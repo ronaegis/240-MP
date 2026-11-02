@@ -4,32 +4,38 @@
 #
 #   curl -fsSL https://github.com/@REPO@/releases/latest/download/install-replayos.sh | bash
 #
-#   install-replayos.sh [--version vX] [--local bundle.tar.gz] [--uninstall [--keep-settings]]
+#   install-replayos.sh [--version vX] [--local bundle.tar.gz] [--no-restart]
+#                       [--uninstall [--keep-settings]]
 #
-# 240-MP runs as a ReplayOS core: /opt/replay/cores/240mp_libretro.so starts
-# the bundle in /opt/240mp (Qt, mpv, yt-dlp... everything ReplayOS lacks).
-# ReplayOS picks a core by matching "<section>/" of /opt/replay/cores/cores.cfg
-# against the content path, so a [240mp] section and an empty
-# roms/240mp/240-MP.lr make it appear as a game. That file and the favorite go
-# on the storage picked in ReplayOS (System > Storage: /media/sd, /media/nvme,
-# /media/usb or /media/nfs). Settings are kept in 240mp/ on that storage, which
-# ReplayOS updates leave alone.
+# 240-MP runs as a ReplayOS external core (ReplayOS 2.1.0 or later,
+# https://www.replayos.com/externalcores/): /opt/replay/cores/240mp_libretro.so
+# starts the bundle in /opt/240mp (Qt, mpv, yt-dlp... everything ReplayOS
+# lacks), and 240mp_libretro.cfg next to it registers the "mp240" system (an
+# ID must start with a letter). Its games are in roms/mp240/ on the storage
+# picked in ReplayOS (System > Storage: /media/sd, /media/nvme, /media/usb or
+# /media/nfs), where an empty 240-MP.lr starts 240-MP. Settings are kept in
+# 240mp/ on that storage.
 #
-# Re-run after a ReplayOS update (it may replace /opt/replay and its core
-# list) and after changing the storage.
+# ReplayOS reads registrations when it starts, so this restarts it when the
+# registration changes (not for a plain update). OTA updates keep the core;
+# run this again after changing the storage.
 set -euo pipefail
 
 REPO="${MP240_REPO:-@REPO@}"     # filled in by the release workflow
 OPT=/opt/240mp
 CORES=/opt/replay/cores
-CFG=$CORES/cores.cfg
-FAV_NAME="240mp@240-MP.lr.fav"
+CORE_CFG=$CORES/240mp_libretro.cfg
+SYSTEM=mp240
+# Before external cores: a [240mp] section in cores.cfg, roms/240mp/ and a
+# favorite. Removed when found.
+LEGACY_CFG=$CORES/cores.cfg
 
-version=latest local_bundle="" uninstall=false keep_settings=false
+version=latest local_bundle="" uninstall=false keep_settings=false restart=true
 while [ $# -gt 0 ]; do
    case "$1" in
       --version) version="$2"; shift 2 ;;
       --local) local_bundle="$2"; shift 2 ;;
+      --no-restart) restart=false; shift ;;
       --uninstall) uninstall=true; shift ;;
       --keep-settings) keep_settings=true; shift ;;
       *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -39,21 +45,37 @@ done
 die() { echo "error: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root"
 [ -d "$CORES" ] || die "$CORES not found: is this ReplayOS?"
+grep -aq '_libretro\.cfg' /opt/replay/replay ||
+   die "this ReplayOS has no external cores: update it to 2.1.0 or later"
 
-# Removes the [240mp] section and only it, whatever else is in the file
-# (blank lines are held back so none is left dangling at the end).
-remove_section() {
-   awk '/^\[/ { skip = ($0 == "[240mp]") }
-        !skip { if ($0 == "") blank++; else { for (; blank > 0; blank--) print ""; print } }' \
-      "$CFG" > "$CFG.240mp-tmp" && mv "$CFG.240mp-tmp" "$CFG"
+# Removes what installs made before external cores, from every storage (it
+# may have changed since). The [240mp] section goes and only it, whatever
+# else is in cores.cfg (blank lines are held back so none is left dangling).
+remove_legacy() {
+   if grep -q '^\[240mp\]' "$LEGACY_CFG" 2>/dev/null; then
+      awk '/^\[/ { skip = ($0 == "[240mp]") }
+           !skip { if ($0 == "") blank++; else { for (; blank > 0; blank--) print ""; print } }' \
+         "$LEGACY_CFG" > "$LEGACY_CFG.240mp-tmp" && mv "$LEGACY_CFG.240mp-tmp" "$LEGACY_CFG"
+   fi
+   for s in /media/*; do
+      rm -rf "$s/roms/240mp" "$s"/roms/_favorites/240mp@*.fav
+   done
+}
+
+restart_replay() {
+   if $restart; then
+      echo "Restarting ReplayOS to $1..."
+      systemctl restart replay.service
+   else
+      echo "Restart ReplayOS to $1: systemctl restart replay.service"
+   fi
 }
 
 if $uninstall; then
-   rm -rf "$OPT" "$CORES/240mp_libretro.so"
-   grep -q '^\[240mp\]' "$CFG" && remove_section
-   # From every storage: the storage may have changed since the install.
+   rm -rf "$OPT" "$CORES/240mp_libretro.so" "$CORE_CFG"
+   remove_legacy
    for s in /media/*; do
-      rm -rf "$s/roms/240mp" "$s/roms/_favorites/$FAV_NAME"
+      rm -rf "$s/roms/$SYSTEM"
       $keep_settings || rm -rf "$s/240mp"
    done
    if $keep_settings; then
@@ -61,6 +83,7 @@ if $uninstall; then
    else
       echo "240-MP removed"
    fi
+   restart_replay "drop the 240-MP system"
    exit 0
 fi
 
@@ -94,7 +117,8 @@ echo "Installing to $OPT..."
 # into place: a running session keeps the files it has open.
 rm -rf /opt/.240mp-new && mkdir /opt/.240mp-new
 tar -C /opt/.240mp-new -xzf "$bundle"
-[ -x /opt/.240mp-new/240mp/bin/240mp ] && [ -f /opt/.240mp-new/240mp/core/240mp_libretro.so ] ||
+[ -x /opt/.240mp-new/240mp/bin/240mp ] && [ -f /opt/.240mp-new/240mp/core/240mp_libretro.so ] &&
+   [ -f /opt/.240mp-new/240mp/core/240mp_libretro.cfg ] ||
    die "not a 240-MP ReplayOS bundle: $bundle"
 
 # Every bundled binary must resolve all its libraries on this system, through
@@ -115,17 +139,23 @@ mv /opt/.240mp-new/240mp "$OPT" && rm -rf /opt/.240mp-new /opt/.240mp-old
 cp "$OPT/core/240mp_libretro.so" "$CORES/.240mp_libretro.so.new"
 mv "$CORES/.240mp_libretro.so.new" "$CORES/240mp_libretro.so"
 
-grep -q '^\[240mp\]' "$CFG" ||
-   printf '\n[240mp]\nlow = "240mp_libretro.so"\nmid = "240mp_libretro.so"\nhi = "240mp_libretro.so"\n' >> "$CFG"
+# The registration (a regular file: ReplayOS rejects symlinks).
+reg_new=$(cat "$OPT/core/240mp_libretro.cfg")
+reg_changed=false
+[ "$(cat "$CORE_CFG" 2>/dev/null)" = "$reg_new" ] || reg_changed=true
+grep -q '^\[240mp\]' "$LEGACY_CFG" 2>/dev/null && reg_changed=true
+printf '%s\n' "$reg_new" > "$CORE_CFG.240mp-tmp" && mv "$CORE_CFG.240mp-tmp" "$CORE_CFG"
+remove_legacy
 
-# The game entry and its favorite (a path relative to the storage) go on the
-# storage ReplayOS uses now. 240-MP makes its settings folder there itself,
-# bringing along settings from the SD card if there are any.
+# The game entry goes on the storage ReplayOS uses now. 240-MP makes its
+# settings folder there itself, bringing along settings from the SD card if
+# there are any.
 . "$OPT/bin/replayos-storage.sh"
 storage=$(storage_dir)
-mkdir -p "$storage/roms/240mp" "$storage/roms/_favorites"
-: > "$storage/roms/240mp/240-MP.lr"
-printf '/roms/240mp/240-MP.lr' > "$storage/roms/_favorites/$FAV_NAME"
+mkdir -p "$storage/roms/$SYSTEM"
+: > "$storage/roms/$SYSTEM/240-MP.lr"
 
-echo "240-MP $(cat "$OPT/VERSION" 2>/dev/null || echo "") installed on $storage: Favorites -> 240-MP"
+echo "240-MP $(cat "$OPT/VERSION" 2>/dev/null || echo "") installed on $storage: open the 240-MP system"
 echo "After changing the storage in ReplayOS, run this again."
+$reg_changed && restart_replay "add the 240-MP system"
+exit 0

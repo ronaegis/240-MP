@@ -296,12 +296,14 @@ scripts/deploy-replayos.sh            # default root@replay, or pass user@host
 It copies the bundle over and runs the same installer releases use, `scripts/install-replayos.sh --local <bundle>`, on the Pi. The installer:
 - Runs `ldd` on every bundled binary and plugin **without** `LD_LIBRARY_PATH`, and refuses to install if anything is `not found`.
 - Swaps `/opt/240mp` and `/opt/replay/cores/240mp_libretro.so` in atomically, so a running session keeps its files.
-- Adds a `[240mp]` section to `/opt/replay/cores/cores.cfg`; `--uninstall` removes that section only.
-- Creates an empty `roms/240mp/240-MP.lr` and a favorite for it on the storage ReplayOS uses: `system_storage` in `/media/sd/config/replay.cfg` names the one mounted at `/media/<name>` (`packaging/replayos/replayos-storage.sh`, which the launcher shares).
+- Registers the core as a ReplayOS [external core](https://www.replayos.com/externalcores/) (ReplayOS 2.1.0 or later, which it checks for) with `/opt/replay/cores/240mp_libretro.cfg` (from `packaging/replayos/`). That declares the system `mp240`: a system ID must start with a letter.
+- Creates an empty `roms/mp240/240-MP.lr` on the storage ReplayOS uses: `system_storage` in `/media/sd/config/replay.cfg` names the one mounted at `/media/<name>` (`packaging/replayos/replayos-storage.sh`, which the launcher shares).
+- Restarts `replay.service` when the registration changed, because ReplayOS reads registrations only when it starts. `--no-restart` prints the command instead.
+- Removes what installs made before external cores existed: the `[240mp]` section of `cores.cfg`, `roms/240mp/` and `240mp@*.fav` favorites.
 
-ReplayOS picks a core by matching `<section>/` against the content path, and an empty content file starts the core without content. The core then runs `/opt/240mp/bin/240mp-bridge`. A `.lr` file whose first line is a program path runs that program instead, for example `/opt/240mp/bin/240mp_test_child`.
+ReplayOS lists the system's files with the extensions the registration declares (`lr`). An empty content file starts the core without content, and the core then runs `/opt/240mp/bin/240mp-bridge`. A `.lr` file whose first line is a program path runs that program instead, for example `/opt/240mp/bin/240mp_test_child`.
 
-ReplayOS updates may replace `/opt/replay` (and with it `cores.cfg`). Re-run the deploy script afterwards.
+OTA updates keep the two files in `/opt/replay/cores/`. Reflashing does not: re-run the deploy script afterwards.
 
 ### Releases
 
@@ -314,7 +316,7 @@ It is separate from `release.yml`, so it also works on a fork without the macOS 
 
 ### Run
 
-**Favorites → 240-MP**. The core option **Video mode** switches between 640x480i and 320x240p live. Leave with ReplayOS's menu combo (Select+Start); quitting 240-MP also returns to the menu.
+Open the **240-MP** system and its **240-MP** entry. The core option **Video mode** switches between 640x480i and 320x240p live. Leave with ReplayOS's menu combo (Select+Start); quitting 240-MP also returns to the menu.
 
 Configuration lives in `240mp/` on the storage ReplayOS uses (`/media/sd/240mp/` on the SD card, or `/media/nvme/240mp/` and so on), or on the SD card when `system_data_location` is `local_sd`. The launcher works this out at every start, and copies an existing `/media/sd/240mp/` (all but `media/`) the first time the folder is missing. It survives ReplayOS updates and, being exFAT, can be edited from a computer. `MP240_DATA_ROOT` overrides it.
 

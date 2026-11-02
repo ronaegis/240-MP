@@ -330,7 +330,7 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
 
 ### Requirements
 
-- A Raspberry Pi 5 running ReplayOS, with network access
+- A Raspberry Pi 5 running ReplayOS 2.1.0 or later, with network access
 - A way to run a command on it as root: SSH (`ssh root@replay`) or a keyboard on its console
 
 ### Steps
@@ -339,8 +339,8 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
    ```bash
    curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash
    ```
-   This downloads the latest release (about 135 MB), checks it against its published checksum, installs it to `/opt/240mp`, and adds 240-MP to ReplayOS's core list. To install a specific release, put `-s -- --version v2026.10.15-replayos.1` after `bash`.
-2. Open **Favorites → 240-MP**.
+   This downloads the latest release (about 135 MB), checks it against its published checksum, installs it to `/opt/240mp`, and registers 240-MP with ReplayOS as an external core. ReplayOS then restarts so that it appears. To install a specific release, put `-s -- --version v2026.10.15-replayos.1` after `bash`.
+2. Open the **240-MP** system in ReplayOS's system list, then **240-MP**. If it isn't listed, check that **Visibility → Show external systems** is on.
 
 240-MP goes on the storage ReplayOS is set to use (**System → Storage**: SD card, NVMe, USB or NFS). If you change the storage later, run the install command again.
 
@@ -355,7 +355,9 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
 
 ### Update
 
-Run the install command again. A running session isn't disturbed; the new version starts next time you open 240-MP. Also re-run it after a ReplayOS update, which may replace ReplayOS's core list. The in-app updater does not apply on ReplayOS.
+Run the install command again. A running session isn't disturbed; the new version starts next time you open 240-MP. ReplayOS updates keep 240-MP; reflashing the SD card doesn't, so run the command again afterwards. The in-app updater does not apply on ReplayOS.
+
+Installed 240-MP before ReplayOS 2.1.0? Update ReplayOS, then run the install command: it moves 240-MP from **Favorites** to its own system and removes the old entries.
 
 ### Uninstall
 
@@ -363,7 +365,7 @@ Run the install command again. A running session isn't disturbed; the new versio
 curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash -s -- --uninstall
 ```
 
-This removes 240-MP, its core and its entry in ReplayOS's core list, leaving other cores alone. Add `--keep-settings` to keep the `240mp/` settings folder.
+This removes 240-MP and its core, and restarts ReplayOS. Other cores are left alone. Add `--keep-settings` to keep the `240mp/` settings folder.
 
 ## On SteamOS / Linux x86_64
 

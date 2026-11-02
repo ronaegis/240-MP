@@ -4,6 +4,7 @@
 # Runs in Docker (Debian trixie arm64, packaging/replayos/Dockerfile) and
 # produces build-replayos/240mp-replayos.tar.gz, 240-MP for /opt/240mp:
 #   core/240mp_libretro.so    the core, which the installer copies to /opt/replay/cores
+#   core/240mp_libretro.cfg   its ReplayOS registration, copied beside it
 #   bin/                      240mp, the mpv stand-in, the launcher, yt-dlp and
 #                             deno for the YouTube module, the test child
 #   lib/                      (everything
@@ -48,6 +49,7 @@ OUT=$B/stage/opt/240mp
 install -m 755 packaging/replayos/240mp-bridge $B/240mp_test_child $OUT/bin/
 install -m 644 packaging/replayos/replayos-storage.sh $OUT/bin/
 install -D -m 755 $B/240mp_libretro.so $OUT/core/240mp_libretro.so
+install -m 644 packaging/replayos/240mp_libretro.cfg $OUT/core/
 echo "$VERSION" > $OUT/VERSION
 install -m 755 $B/downloads/yt-dlp $OUT/bin/yt-dlp
 install -m 755 $B/downloads/deno/deno $OUT/bin/deno

@@ -291,7 +291,7 @@ The **scripts module** (`modules/scripts/`, `src/modules/scripts/`) is the secon
 
 ## ReplayOS core (libretro bridge)
 
-[ReplayOS](https://www.replayos.com/) drives a CRT from a Raspberry Pi 5 and generates the exact video mode each game needs. Its frontend owns the display (DRM/KMS), the sound card and every controller, and only runs **libretro cores**. 240-MP runs there *as a core*: ReplayOS loads `240mp_libretro.so` like any emulator, and the core puts 240-MP on the CRT. Built only with `-DMP240_LIBRETRO_BRIDGE=ON` (see [BUILDING.md](BUILDING.md#replayos-raspberry-pi-5)). Every other build is unaffected.
+[ReplayOS](https://www.replayos.com/) drives a CRT from a Raspberry Pi 5 and generates the exact video mode each game needs. Its frontend owns the display (DRM/KMS), the sound card and every controller, and only runs **libretro cores**. 240-MP runs there *as a core*: registered as an [external core](https://www.replayos.com/externalcores/) (ReplayOS 2.1.0+, `packaging/replayos/240mp_libretro.cfg`, system `mp240`), ReplayOS loads `240mp_libretro.so` like any emulator, and the core puts 240-MP on the CRT. Built only with `-DMP240_LIBRETRO_BRIDGE=ON` (see [BUILDING.md](BUILDING.md#replayos-raspberry-pi-5)). Every other build is unaffected.
 
 ```
 ReplayOS frontend ──dlopen──► 240mp_libretro.so (libretro/core.c, C, no Qt)
