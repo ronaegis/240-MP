@@ -340,7 +340,8 @@ On [ReplayOS](https://www.replayos.com/), 240-MP runs as one of its cores: you s
    curl -fsSL https://github.com/ronaegis/240-MP/releases/latest/download/install-replayos.sh | bash
    ```
    This downloads the latest release (about 135 MB), checks it against its published checksum, installs it to `/opt/240mp`, and registers 240-MP with ReplayOS as an external core. ReplayOS then restarts so that it appears. To install a specific release, put `-s -- --version v2026.10.15-replayos.1` after `bash`.
-2. Open the **240-MP** system in ReplayOS's system list, then **240-MP**. If it isn't listed, check that **Visibility → Show external systems** is on.
+2. If the installer says it raised the video memory (CMA), reboot the Pi once: without it, HEVC videos (common on Plex) stay black.
+3. Open the **240-MP** system in ReplayOS's system list, then **240-MP**. If it isn't listed, check that **Visibility → Show external systems** is on.
 
 240-MP goes on the storage ReplayOS is set to use (**System → Storage**: SD card, NVMe, USB or NFS). If you change the storage later, run the install command again.
 

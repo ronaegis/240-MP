@@ -29,6 +29,9 @@ SYSTEM=mp240
 # Before external cores: a [240mp] section in cores.cfg, roms/240mp/ and a
 # favorite. Removed when found.
 LEGACY_CFG=$CORES/cores.cfg
+# ReplayOS keeps this boot config across updates.
+BOOT_CFG=/boot/firmware/config.user.txt
+CMA_MARK="# 240-MP: more CMA"
 
 version=latest local_bundle="" uninstall=false keep_settings=false restart=true
 while [ $# -gt 0 ]; do
@@ -62,6 +65,30 @@ remove_legacy() {
    done
 }
 
+# The Pi 5's 64 MB of CMA (contiguous memory) is shared by the HEVC decoder,
+# which needs about 40 MB for 1080p 10-bit, and the frontend's framebuffers,
+# about 32 MB in ReplayOS 2.1.0 (2560-wide CRT modes). Short of it, the decoder
+# stalls on the first frame. Takes effect after a reboot.
+add_cma() {
+   [ -f "$BOOT_CFG" ] || { echo "warning: $BOOT_CFG not found; HEVC video may not play"; return 0; }
+   grep -qF "$CMA_MARK" "$BOOT_CFG" && return 0
+   if [ "$(awk '/^CmaTotal:/ { print $2 }' /proc/meminfo)" -ge 262144 ] || grep -q 'cma' "$BOOT_CFG"; then
+      return 0   # already raised, or set by hand
+   fi
+   printf '\n%s (HEVC decoding beside the frontend'"'"'s framebuffers)\n[pi5]\ndtoverlay=vc4-kms-v3d,cma-256\n[all]\n' \
+      "$CMA_MARK" >> "$BOOT_CFG"
+   echo "Raised the video memory (CMA) to 256 MB in $BOOT_CFG: reboot for HEVC video to play"
+}
+
+# Removes the block add_cma wrote: its comment line up to its closing [all].
+remove_cma() {
+   [ -f "$BOOT_CFG" ] && grep -qF "$CMA_MARK" "$BOOT_CFG" || return 0
+   awk -v mark="$CMA_MARK" 'index($0, mark) == 1 { skip = 1; next }
+        skip { if ($0 == "[all]") skip = 0; next }
+        { if ($0 == "") blank++; else { for (; blank > 0; blank--) print ""; print } }' \
+      "$BOOT_CFG" > "$BOOT_CFG.240mp-tmp" && mv "$BOOT_CFG.240mp-tmp" "$BOOT_CFG"
+}
+
 restart_replay() {
    if $restart; then
       echo "Restarting ReplayOS to $1..."
@@ -74,6 +101,7 @@ restart_replay() {
 if $uninstall; then
    rm -rf "$OPT" "$CORES/240mp_libretro.so" "$CORE_CFG"
    remove_legacy
+   remove_cma
    for s in /media/*; do
       rm -rf "$s/roms/$SYSTEM"
       $keep_settings || rm -rf "$s/240mp"
@@ -155,6 +183,7 @@ storage=$(storage_dir)
 mkdir -p "$storage/roms/$SYSTEM"
 : > "$storage/roms/$SYSTEM/240-MP.lr"
 
+add_cma
 echo "240-MP $(cat "$OPT/VERSION" 2>/dev/null || echo "") installed on $storage: open the 240-MP system"
 echo "After changing the storage in ReplayOS, run this again."
 $reg_changed && restart_replay "add the 240-MP system"
