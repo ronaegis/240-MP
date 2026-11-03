@@ -14,6 +14,9 @@ class MpvController : public QObject {
     Q_PROPERTY(int position    READ position    NOTIFY positionChanged)
     Q_PROPERTY(int duration    READ duration    NOTIFY durationChanged)
     Q_PROPERTY(int playlistPos READ playlistPos NOTIFY playlistPosChanged)
+    // Why the last playback failed, for the user; empty when it didn't or when
+    // mpv gave no reason. Set before playbackEnded, cleared by loadAndPlay.
+    Q_PROPERTY(QString failureMessage READ failureMessage NOTIFY failureMessageChanged)
 
 public:
     explicit MpvController(const QString &appRoot, const QString &dataRoot,
@@ -25,6 +28,7 @@ public:
     int position()    const { return m_position;    }
     int duration()    const { return m_duration;    }
     int playlistPos() const { return m_playlistPos; }
+    QString failureMessage() const { return m_failureMessage; }
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
                                   int audioTrack, int subTrack,
@@ -65,13 +69,15 @@ signals:
     void positionChanged(int ms);
     void durationChanged(int ms);
     void playlistPosChanged(int pos);
+    void failureMessageChanged();
     // Emitted exactly once when mpv exits, with the reason it ended:
     //   "eof"     — file played to its natural end. (What a module does with this
     //               is its own concern.  as an example: Plex may autoplay the next episode)
     //   "stopped" — user quit/stopped before the end (also the safe default for a
     //               crash/kill with no end-file event).
     //   "failed"  — mpv exited with an error (code 2 — file could not be played;
-    //               Up to the module as to when/how to use; for example Plex retries when transcoding).
+    //               Up to the module as to when/how to use; for example Plex retries when transcoding),
+    //               or mpv got stuck playing and was stopped (failureMessage is set).
     // A single signal (rather than one per reason) is deliberate: a Player view
     // connects one handler and branches on `reason`, so it can never silently drop
     // a case the way an unhandled per-reason signal would.
@@ -130,6 +136,10 @@ private:
     QTimer       *m_watchdogTimer  = nullptr;
     qint64        m_lastIpcEventMs = 0;
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
+    bool          m_coreIdle       = true;   // mirrors mpv's core-idle (loading/buffering: watchdog exemption)
+    bool          m_stalled        = false;  // the watchdog stopped this session's mpv
+    QString       m_failureMessage;
+    static constexpr qint64 kStallMs = 15000;
     QString       m_appRoot;
     QString       m_dataRoot;
     QString       m_socketPath;

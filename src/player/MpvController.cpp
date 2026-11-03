@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QDateTime>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QDebug>
 
@@ -58,6 +59,7 @@ MpvController::MpvController(const QString &appRoot, const QString &dataRoot,
         sendCommand({"observe_property", 2, "duration"});
         sendCommand({"observe_property", 3, "playlist-pos"});
         sendCommand({"observe_property", 4, "pause"});
+        sendCommand({"observe_property", 5, "core-idle"});
     });
     connect(m_ipc, &QLocalSocket::readyRead, this, &MpvController::onIpcReadyRead);
 
@@ -65,21 +67,30 @@ MpvController::MpvController(const QString &appRoot, const QString &dataRoot,
     m_connectTimer->setInterval(100);
     connect(m_connectTimer, &QTimer::timeout, this, &MpvController::tryConnectIpc);
 
-    // Watchdog: fires every 10 s; logs a warning if no IPC time-pos event has
-    // arrived for 30 s while connected — strong indicator of a playback freeze.
-    // Exempt while paused: time-pos is legitimately silent then (a long pause is
-    // a normal state now that the screen saver runs over it), and the unpause
-    // property-change event refreshes m_lastIpcEventMs so the 30 s window
-    // restarts fresh on resume.
+    // Watchdog: while mpv is playing, time-pos changes several times a second.
+    // If no property event arrives for kStallMs, mpv is stuck (e.g. a hardware
+    // decoder that ran out of memory blocks mpv's core, leaving a frozen or
+    // black screen with no error): stop it and report the playback as failed.
+    // Exempt while paused or while mpv's core is idle (loading, buffering for
+    // the network cache, idle at the end): time-pos is legitimately silent
+    // then, and the property change that ends the state restarts the window.
     m_watchdogTimer = new QTimer(this);
-    m_watchdogTimer->setInterval(10000);
+    m_watchdogTimer->setInterval(2500);
     connect(m_watchdogTimer, &QTimer::timeout, this, [this] {
-        if (m_ipc->state() != QLocalSocket::ConnectedState || m_paused) return;
-        qint64 silenceMs = QDateTime::currentMSecsSinceEpoch() - m_lastIpcEventMs;
-        if (silenceMs > 30000) {
-            qWarning("[MpvController] WATCHDOG: no IPC time-pos event for %lld s — possible freeze",
-                     silenceMs / 1000);
-        }
+        if (m_ipc->state() != QLocalSocket::ConnectedState || m_paused || m_coreIdle) return;
+        const qint64 silenceMs = QDateTime::currentMSecsSinceEpoch() - m_lastIpcEventMs;
+        if (silenceMs < kStallMs || m_stalled || !m_process) return;
+        qWarning("[MpvController] WATCHDOG: mpv stopped responding for %lld s while playing; stopping it",
+                 silenceMs / 1000);
+        m_stalled = true;
+        m_watchdogTimer->stop();
+        m_process->terminate();
+        // A stuck mpv may not act on SIGTERM; make sure it goes.
+        QPointer<QProcess> proc = m_process;
+        QTimer::singleShot(5000, this, [proc] {
+            if (proc && proc->state() != QProcess::NotRunning)
+                proc->kill();
+        });
     });
 }
 
@@ -123,6 +134,12 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_duration    = 0;
     m_playlistPos = -1;
     m_paused      = false;
+    m_coreIdle    = true;
+    m_stalled     = false;
+    if (!m_failureMessage.isEmpty()) {
+        m_failureMessage.clear();
+        emit failureMessageChanged();
+    }
     m_lastEndFileReason.clear();
     m_pendingStartClear = false;
 
@@ -558,6 +575,10 @@ void MpvController::onIpcReadyRead() {
             m_paused = data.toBool();
             continue;
         }
+        if (name == "core-idle") {
+            m_coreIdle = data.toBool();
+            continue;
+        }
         const double val = data.toDouble();
         if (name == "time-pos") {
             m_position = int(val * 1000.0);
@@ -600,10 +621,15 @@ void MpvController::onProcessFinished() {
     // Classify why mpv exited, once, so both the headless and desktop paths emit
     // the same playbackEnded reason:
     //   exit code 2          -> "failed"  (file could not be played; up to the module as to what to do. As an example: Plex attemps a retry in this case)
+    //   stopped by watchdog  -> "failed"  (mpv got stuck playing; failureMessage says so)
     //   end-file reason "eof"-> "eof"     (natural end; up to the module as to what to do. As an example: Plex autoplays next)
     //   anything else        -> "stopped" (user quit/stop, crash, or kill; a safe default)
     QString reason;
-    if (exitCode == 2)                    reason = QStringLiteral("failed");
+    if (m_stalled) {
+        m_failureMessage = QStringLiteral("THIS VIDEO STOPPED PLAYING\n\nIT MAY BE TOO DEMANDING FOR THIS DEVICE (E.G. 4K)");
+        emit failureMessageChanged();
+    }
+    if (exitCode == 2 || m_stalled)       reason = QStringLiteral("failed");
     else if (m_lastEndFileReason == "eof") reason = QStringLiteral("eof");
     else                                   reason = QStringLiteral("stopped");
 

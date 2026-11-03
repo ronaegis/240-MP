@@ -212,11 +212,52 @@ Window {
                 idleTracker.resetActivity()
                 root.dismissScreenSaver()
             }
+            if (ms > 0)
+                playbackFailureNotice.visible = false  // a retry (e.g. Plex transcode) is playing
         }
         function onPlaybackEnded(finalPositionMs, finalDurationMs, reason) {
             idleTracker.mpvActive = false
             idleTracker.resetActivity()
             root.dismissScreenSaver()
+            if (reason === "failed" && mpvController.failureMessage !== "") {
+                playbackFailureNotice.visible = true
+                playbackFailureTimer.restart()
+            }
+        }
+    }
+
+    // --- PLAYBACK FAILURE NOTICE ---
+    // Shown over whatever view the module returns to when MpvController had to
+    // stop a stuck mpv (failureMessage). Modules still handle the "failed" end
+    // as before (Plex/Jellyfin/Emby retry with a transcode, others go back);
+    // this only tells the user why. Takes no focus; hides by itself.
+    Rectangle {
+        id: playbackFailureNotice
+        visible: false
+        z: 9000
+        anchors.centerIn: parent
+        width: root.sw * 0.7
+        height: failureText.implicitHeight + root.sh * 0.08
+        color: "#000000"
+        border.color: root.primaryColor
+        border.width: Math.max(1, root.sh * 0.005)
+
+        Text {
+            id: failureText
+            anchors.centerIn: parent
+            width: parent.width - root.sw * 0.06
+            text: mpvController.failureMessage
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: root.sh * 0.0375
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+
+        Timer {
+            id: playbackFailureTimer
+            interval: 8000
+            onTriggered: playbackFailureNotice.visible = false
         }
     }
 
