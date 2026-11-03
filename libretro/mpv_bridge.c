@@ -585,6 +585,11 @@ int main(int argc, char **argv)
    set_default("input-default-bindings", "yes");
    set_default("idle", "once");
    set_default("hwdec", "drm,no");  /* Pi 5: HEVC in hardware, the rest in software */
+   /* A fixed pool of 8 HEVC frames (reorder + thread + 2) instead of 12 that
+    * can grow: 1080p 10-bit takes about 45 MB of CMA instead of 61, and the
+    * Pi 5's stock 64 MB (shared with the display) runs out otherwise, leaving
+    * the video on its first frame. */
+   set_default("vd-lavc-o", "extra_hw_frames=2");
    set_default("profile", "fast");
    set_default("vo", "libmpv");
    set_default("ao", "pcm");
